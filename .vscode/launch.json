@@ -1,0 +1,16 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Build Navigation Test",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build",
+            "program": "${workspaceFolder}/Scripts/Mdk.NavigationTest/Mdk.NavigationTest/bin/Debug/netframework48/Mdk.NavigationTest.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}/Scripts/Mdk.NavigationTest/Mdk.NavigationTest",
+            "console": "integratedTerminal",
+            "stopAtEntry": false
+        }
+    ]
+}

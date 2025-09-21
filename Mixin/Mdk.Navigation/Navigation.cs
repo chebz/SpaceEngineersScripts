@@ -37,7 +37,7 @@ namespace IngameScript
         private readonly Dictionary<ThrusterDir, List<IMyThrust>> _thrusters =
             new Dictionary<ThrusterDir, List<IMyThrust>>();
 
-        private IMyGridTerminalSystem _gridTerminalSystem;
+        private Program _program;
         private IMyRemoteControl _remoteControl;
         #endregion
 
@@ -54,9 +54,9 @@ namespace IngameScript
         #endregion
 
         #region Methods
-        public bool Initialize(IMyGridTerminalSystem gridTerminalSystem, out string errorMessage)
+        public bool Initialize(Program program, out string errorMessage)
         {
-            _gridTerminalSystem = gridTerminalSystem;
+            _program = program;
             return
                 InitializeRemoteControl(out errorMessage) &&
                 InitializeThrusters(out errorMessage);
@@ -66,7 +66,7 @@ namespace IngameScript
         {
             errorMessage = string.Empty;
             var remoteControls = new List<IMyRemoteControl>();
-            _gridTerminalSystem.GetBlocksOfType(remoteControls);
+            _program.GridTerminalSystem.GetBlocksOfType(remoteControls);
             _remoteControl = remoteControls.FirstOrDefault();
             if (_remoteControl == null)
             {
@@ -121,7 +121,7 @@ namespace IngameScript
 
             // Get all thrusters on the grid
             var allThrusters = new List<IMyThrust>();
-            _gridTerminalSystem.GetBlocksOfType(allThrusters);
+            _program.GridTerminalSystem.GetBlocksOfType(allThrusters);
 
             // Get remote control's orientation vectors
             var remoteMatrix = _remoteControl.WorldMatrix;
