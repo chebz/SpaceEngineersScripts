@@ -18,7 +18,7 @@ namespace IngameScript
         private const double PID_TIME_STEP_DEFAULT = 1.0 / 6.0;
         private const double PRECISION_DEFAULT = 0.01;
 
-        private readonly List<IMyGyro> _gyros = new List<IMyGyro>();
+        private List<IMyGyro> _gyros = new List<IMyGyro>();
         private Program _program;
         private IMyRemoteControl _remoteControl;
         #endregion
@@ -42,30 +42,18 @@ namespace IngameScript
         public bool Initialize(Program program, out string errorMessage)
         {
             _program = program;
-            return InitializeRemoteControl(out errorMessage) && InitializeGyros(out errorMessage);
-        }
-
-        private bool InitializeRemoteControl(out string errorMessage)
-        {
             errorMessage = string.Empty;
-            var remoteControls = new List<IMyRemoteControl>();
-            _program.GridTerminalSystem.GetBlocksOfType(remoteControls);
-            _remoteControl = remoteControls.FirstOrDefault();
+
+            // Initialize remote control
+            _remoteControl = _program.GetLocalBlock<IMyRemoteControl>();
             if (_remoteControl == null)
             {
                 errorMessage = "Alignment: No remote control found!";
                 return false;
             }
 
-            return true;
-        }
-
-        private bool InitializeGyros(out string errorMessage)
-        {
-            errorMessage = string.Empty;
-            _gyros.Clear();
-            _program.GridTerminalSystem.GetBlocksOfType(_gyros);
-
+            // Initialize gyros
+            _gyros = _program.GetLocalBlocks<IMyGyro>();
             if (_gyros.Count == 0)
             {
                 errorMessage = "Alignment: No gyros found!";
@@ -283,6 +271,9 @@ namespace IngameScript
         {
             foreach (var gyro in _gyros)
             {
+                gyro.Pitch = 0;
+                gyro.Roll = 0;
+                gyro.Yaw = 0;
                 gyro.GyroOverride = false;
             }
         }
@@ -311,6 +302,37 @@ namespace IngameScript
                 gyro.SetValueFloat("Pitch", (float)gyroRotation.X);
                 gyro.SetValueFloat("Yaw", (float)gyroRotation.Y);
                 gyro.SetValueFloat("Roll", (float)gyroRotation.Z);
+            }
+        }
+
+        public bool AlignWithTarget(Vector3D targetPosition)
+        {
+            if (_remoteControl == null) 
+            {
+                return true;
+            }
+
+            var currentPosition = _remoteControl.CenterOfMass;
+            var directionToTarget = Vector3D.Normalize(targetPosition - currentPosition);
+            
+            // Get gravity direction and create proper up vector (opposite of gravity)
+            var gravityVector = _remoteControl.GetNaturalGravity();
+            var upDirection = gravityVector.LengthSquared() > 0 ? -Vector3D.Normalize(gravityVector) : Vector3D.Up;
+            
+            // Create target matrix with forward pointing to target and up aligned with anti-gravity
+            var targetMatrix = MatrixD.CreateWorld(Vector3D.Zero, directionToTarget, upDirection);
+            
+            return AlignWithWorldMatrix(targetMatrix);
+        }
+
+        public void ApplyYawForce(double yawForce)
+        {
+            foreach (var gyro in _gyros)
+            {
+                gyro.GyroOverride = true;
+                gyro.Pitch = 0;
+                gyro.Roll = 0;
+                gyro.Yaw = (float)yawForce;
             }
         }
         #endregion

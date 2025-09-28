@@ -23,6 +23,18 @@ namespace IngameScript
         public double Ki { get; set; }
         public double Kd { get; set; }
         public double Value { get; private set; }
+        public double TimeStep 
+        { 
+            get 
+            {
+                return _timeStep;
+            }
+            set
+            {
+                _timeStep = value;
+                _inverseTimeStep = 1 / _timeStep;
+            }
+        }
         #endregion
 
         #region Constructors

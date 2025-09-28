@@ -29,7 +29,7 @@ namespace IngameScript
         private const double KP_POS_DEFAULT = 3.0;
         private const double KI_POS_DEFAULT = 1.0;
         private const double KD_POS_DEFAULT = 0.0;
-        private const bool FACTOR_GRAVITY_DEFAULT = false;
+        private const bool FACTOR_GRAVITY_DEFAULT = true;
         private const double BRAKING_DISTANCE_FACTOR_DEFAULT = 3.0;
         private const double PRECISION_DEFAULT = 0.1;
 
@@ -57,24 +57,15 @@ namespace IngameScript
         public bool Initialize(Program program, out string errorMessage)
         {
             _program = program;
-            return
-                InitializeRemoteControl(out errorMessage) &&
-                InitializeThrusters(out errorMessage);
-        }
-
-        private bool InitializeRemoteControl(out string errorMessage)
-        {
-            errorMessage = string.Empty;
-            var remoteControls = new List<IMyRemoteControl>();
-            _program.GridTerminalSystem.GetBlocksOfType(remoteControls);
-            _remoteControl = remoteControls.FirstOrDefault();
+            // Initialize remote control
+            _remoteControl = _program.GetLocalBlock<IMyRemoteControl>();
             if (_remoteControl == null)
             {
                 errorMessage = "Navigation: No remote control found!";
                 return false;
             }
 
-            return true;
+            return InitializeThrusters(out errorMessage);
         }
 
         private bool InitializeThrusters(out string errorMessage)
@@ -121,7 +112,7 @@ namespace IngameScript
 
             // Get all thrusters on the grid
             var allThrusters = new List<IMyThrust>();
-            _program.GridTerminalSystem.GetBlocksOfType(allThrusters);
+            _program.GridTerminalSystem.GetBlocksOfType<IMyThrust>(allThrusters);
 
             // Get remote control's orientation vectors
             var remoteMatrix = _remoteControl.WorldMatrix;
@@ -235,19 +226,14 @@ namespace IngameScript
             {
                 SetThrusterGroupPower(key, 0);
             }
+            PidXPos.Reset();
+            PidYPos.Reset();
+            PidZPos.Reset();
         }
 
         public Vector3D GetCurrentPosition()
         {
             return _remoteControl.GetPosition();
-        }
-
-        private void DisableThrusterOverrides()
-        {
-            foreach (var key in _thrusters.Keys)
-            {
-                SetThrusterGroupPower(key, 0);
-            }
         }
 
         public bool NavigateTo(Vector3D target, double maxSpeed = 20.0)
@@ -263,10 +249,8 @@ namespace IngameScript
             // --- Arrival check ---
             if (distance < Precision && vel.Length() < Precision)
             {
-                DisableThrusterOverrides();
-                PidXPos.Reset(); // reset PID state
-                PidYPos.Reset();
-                PidZPos.Reset();
+                _program.Echo($"Distance: {distance}, Precision: {Precision}");
+                Stop();
                 return true;
             }
 

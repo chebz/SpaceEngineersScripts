@@ -10,11 +10,11 @@ namespace IngameScript
     public class PathNavigation
     {
         #region Fields
-        private const double NORMAL_NAV_PRECISION_DEFAULT = 1.0;
-        private const double NORMAL_ALIGN_PRECISION_DEFAULT = 0.02;
+        private const double NORMAL_NAV_PRECISION_DEFAULT = 0.2;
+        private const double NORMAL_ALIGN_PRECISION_DEFAULT = 0.01;
         private const double DOCKING_NAV_PRECISION_DEFAULT = 0.1;
         private const double DOCKING_ALIGN_PRECISION_DEFAULT = 0.01;
-        private const double APPROACH_DISTANCE_DEFAULT = 5.0;
+        private const double APPROACH_DISTANCE_DEFAULT = 2.0;
         private const double NUDGE_DISTANCE = 0.01;
 
         private readonly Dictionary<string, Path> _navigationPaths = new Dictionary<string, Path>();
@@ -45,36 +45,18 @@ namespace IngameScript
             _navigation = navigation;
             _alignment = alignment;
             _context = new PathNavContext(this);
-
-            if (!InitializeRemoteControl(out errorMessage) ||
-                !InitializeConnector(dockingConnectorName, out errorMessage))
-            {
-                return false;
-            }
-
-            return true;
-        }
-
-        private bool InitializeRemoteControl(out string errorMessage)
-        {
             errorMessage = string.Empty;
-            var remoteControls = new List<IMyRemoteControl>();
-            _program.GridTerminalSystem.GetBlocksOfType(remoteControls);
-            _remoteControl = remoteControls.FirstOrDefault();
+
+            // Initialize remote control
+            _remoteControl = _program.GetLocalBlock<IMyRemoteControl>();
             if (_remoteControl == null)
             {
                 errorMessage = "PathNavigation: No remote control found!";
                 return false;
             }
 
-            return true;
-        }
-
-        private bool InitializeConnector(string dockingConnectorName, out string errorMessage)
-        {
-            errorMessage = string.Empty;
-            _connector = _program.GridTerminalSystem.GetBlockWithName(dockingConnectorName) as IMyShipConnector;
-
+            // Initialize connector
+            _connector = _program.GetLocalBlock<IMyShipConnector>(dockingConnectorName);
             if (_connector == null)
             {
                 errorMessage = "PathNavigation: Connector not found!";
@@ -116,7 +98,7 @@ namespace IngameScript
             _navigationPaths.Remove(pathName);
         }
 
-        public void StartPath(string pathName, bool reverse = false)
+        public void StartPath(string pathName, bool reverse = false, int startIndex = 0)
         {
             if (!_navigationPaths.ContainsKey(pathName) || _navigationPaths[pathName].Waypoints.Count == 0)
             {
@@ -124,7 +106,7 @@ namespace IngameScript
             }
 
             var path = _navigationPaths[pathName];
-            _context.StartPath(path, path.Speed, reverse);
+            _context.StartPath(path, path.Speed, reverse, startIndex);
         }
 
         public void StopPath()
@@ -212,12 +194,13 @@ namespace IngameScript
                 var wp = path.Waypoints[i];
                 data += $"WP{i}:\n";
                 data +=
-                    $"  POS:{wp.WorldMatrix.Translation.X:F4},{wp.WorldMatrix.Translation.Y:F4},{wp.WorldMatrix.Translation.Z:F4}\n";
+                    $"  POS:{wp.WorldMatrix.Translation.X:F8},{wp.WorldMatrix.Translation.Y:F8},{wp.WorldMatrix.Translation.Z:F8}\n";
                 data +=
-                    $"  FWD:{wp.WorldMatrix.Forward.X:F4},{wp.WorldMatrix.Forward.Y:F4},{wp.WorldMatrix.Forward.Z:F4}\n";
-                data += $"  RGT:{wp.WorldMatrix.Right.X:F4},{wp.WorldMatrix.Right.Y:F4},{wp.WorldMatrix.Right.Z:F4}\n";
-                data += $"  UP:{wp.WorldMatrix.Up.X:F4},{wp.WorldMatrix.Up.Y:F4},{wp.WorldMatrix.Up.Z:F4}\n";
+                    $"  FWD:{wp.WorldMatrix.Forward.X:F8},{wp.WorldMatrix.Forward.Y:F8},{wp.WorldMatrix.Forward.Z:F8}\n";
+                data += $"  RGT:{wp.WorldMatrix.Right.X:F8},{wp.WorldMatrix.Right.Y:F8},{wp.WorldMatrix.Right.Z:F8}\n";
+                data += $"  UP:{wp.WorldMatrix.Up.X:F8},{wp.WorldMatrix.Up.Y:F8},{wp.WorldMatrix.Up.Z:F8}\n";
                 data += $"  DOCK:{wp.IsDocking}\n";
+                data += $"  DOCKDIR:{wp.DockingDir.X:F8},{wp.DockingDir.Y:F8},{wp.DockingDir.Z:F8}\n";
             }
 
             return data;
@@ -249,8 +232,8 @@ namespace IngameScript
                         // Start of new waypoint
                         var wp = new Path.Waypoint();
 
-                        // Read next 5 lines for this waypoint
-                        if (i + 5 < lines.Length)
+                        // Read next 6 lines for this waypoint (added DOCKDIR)
+                        if (i + 6 < lines.Length)
                         {
                             // Position
                             var posLine = lines[i + 1].Trim();
@@ -321,8 +304,23 @@ namespace IngameScript
                                 wp.IsDocking = isDocking;
                             }
 
+                            // Docking Direction
+                            var dockDirLine = lines[i + 6].Trim();
+                            if (dockDirLine.StartsWith("DOCKDIR:"))
+                            {
+                                var dockDirParts = dockDirLine.Substring(8).Split(',');
+                                if (dockDirParts.Length == 3)
+                                {
+                                    double x, y, z;
+                                    double.TryParse(dockDirParts[0], out x);
+                                    double.TryParse(dockDirParts[1], out y);
+                                    double.TryParse(dockDirParts[2], out z);
+                                    wp.DockingDir = new Vector3D(x, y, z);
+                                }
+                            }
+
                             path.Waypoints.Add(wp);
-                            i += 5; // Skip the waypoint data lines
+                            i += 6; // Skip the waypoint data lines (added DOCKDIR)
                         }
                     }
                 }
@@ -384,11 +382,12 @@ namespace IngameScript
             #endregion
 
             #region Nested type: Waypoint
-            public struct Waypoint
-            {
-                public MatrixD WorldMatrix;
-                public bool IsDocking;
-            }
+        public struct Waypoint
+        {
+            public MatrixD WorldMatrix;
+            public bool IsDocking;
+            public Vector3D DockingDir; // Direction to approach this docking point
+        }
             #endregion
         }
         #endregion
@@ -428,13 +427,30 @@ namespace IngameScript
             #endregion
 
             #region Methods
-            public void StartPath(Path path, double maxSpeed, bool reverse = false)
+            public void StartPath(Path path, double maxSpeed, bool reverse = false, int startIndex = 0)
             {
                 CurrentPath = path;
-                CurrentPathIndex = reverse ? path.Waypoints.Count - 1 : 0;
                 _maxSpeed = maxSpeed;
                 _isReversed = reverse;
                 Status.pathName = path.Name;
+
+                // Handle start index with reverse conversion
+                if (reverse)
+                {
+                    // Convert startIndex for reverse: 0 becomes last, 1 becomes second-to-last, etc.
+                    CurrentPathIndex = startIndex == 0 ? path.Waypoints.Count - 1 : path.Waypoints.Count - 1 - startIndex;
+                }
+                else
+                {
+                    CurrentPathIndex = startIndex;
+                }
+
+                // Validate index bounds
+                if (CurrentPathIndex < 0 || CurrentPathIndex >= path.Waypoints.Count)
+                {
+                    CurrentPathIndex = reverse ? path.Waypoints.Count - 1 : 0;
+                }
+
                 TransitionTo(new StartPathState(this));
             }
 
@@ -469,6 +485,7 @@ namespace IngameScript
                 var recordingState = CurrentState as PathRecordingState;
                 if (recordingState != null)
                 {
+                    _pathNavigation._remoteControl.CustomData += $"\n[{DateTime.Now:HH:mm:ss}] PathNavigation: Adding waypoint";
                     recordingState.AddWaypoint();
                 }
             }
@@ -491,6 +508,12 @@ namespace IngameScript
                     _context.Status.moving = false;
                     _context.Status.docking = false;
                     _context.Status.undocking = false;
+                    
+                    // Log state transition
+                    if (_context._pathNavigation._remoteControl != null)
+                    {
+                        _context._pathNavigation._remoteControl.CustomData += $"\n[{DateTime.Now:HH:mm:ss}] PathNavigation: StartPathState";
+                    }
                 }
 
                 public override void Execute()
@@ -504,7 +527,7 @@ namespace IngameScript
                     }
                     else
                     {
-                        _context.TransitionTo(new MovingState(_context));
+                        _context.TransitionTo(new AligningState(_context));
                     }
                 }
                 #endregion
@@ -525,6 +548,12 @@ namespace IngameScript
                     _context.Status.moving = false;
                     _context.Status.docking = false;
                     _context.Status.undocking = false;
+                    
+                    // Log state transition
+                    if (_context._pathNavigation._remoteControl != null)
+                    {
+                        _context._pathNavigation._remoteControl.CustomData += $"\n[{DateTime.Now:HH:mm:ss}] PathNavigation: StopPathState";
+                    }
                 }
 
                 public override void Execute()
@@ -552,6 +581,12 @@ namespace IngameScript
                     _context.Status.docking = false;
                     _context.Status.undocking = false;
                     _context.Status.currentStateName = "IdleState";
+                    
+                    // Log state transition
+                    if (_context._pathNavigation._remoteControl != null)
+                    {
+                        _context._pathNavigation._remoteControl.CustomData += $"\n[{DateTime.Now:HH:mm:ss}] PathNavigation: IdleState";
+                    }
                 }
 
                 public override void Execute()
@@ -584,6 +619,12 @@ namespace IngameScript
                     _context.Status.docking = false;
                     _context.Status.undocking = false;
                     _context.Status.currentStateName = "StartPathState";
+                    
+                    // Log state transition
+                    if (_context._pathNavigation._remoteControl != null)
+                    {
+                        _context._pathNavigation._remoteControl.CustomData += $"\n[{DateTime.Now:HH:mm:ss}] PathNavigation: PathRecordingState";
+                    }
                 }
 
                 public override void Execute()
@@ -595,11 +636,19 @@ namespace IngameScript
                 {
                     var worldMatrix = _context._pathNavigation._remoteControl.WorldMatrix;
                     var isDocking = _context._pathNavigation._connector.IsConnected;
+                    
+                    // If docking, capture the other connector's forward direction
+                    var dockingDir = Vector3D.Zero;
+                    if (isDocking && _context._pathNavigation._connector.OtherConnector != null)
+                    {
+                        dockingDir = _context._pathNavigation._connector.OtherConnector.WorldMatrix.Forward;
+                    }
 
                     var waypoint = new Path.Waypoint
                     {
                         WorldMatrix = worldMatrix,
-                        IsDocking = isDocking
+                        IsDocking = isDocking,
+                        DockingDir = dockingDir
                     };
 
                     _path.Waypoints.Add(waypoint);
@@ -623,6 +672,12 @@ namespace IngameScript
                     _context.Status.docking = false;
                     _context.Status.undocking = false;
                     _context.Status.currentStateName = "AligningState";
+                    
+                    // Log state transition
+                    if (_context._pathNavigation._remoteControl != null)
+                    {
+                        _context._pathNavigation._remoteControl.CustomData += $"\n[{DateTime.Now:HH:mm:ss}] PathNavigation: AligningState";
+                    }
                 }
 
                 public override void Execute()
@@ -637,34 +692,15 @@ namespace IngameScript
                     // Align directly with the waypoint's world matrix
                     if (_context._pathNavigation._alignment.AlignWithWorldMatrix(currentPoint.WorldMatrix))
                     {
-                        // Alignment complete, move to next point
-                        if (_context._isReversed)
+                        // Alignment complete, now move to current point or handle docking
+                        if (currentPoint.IsDocking)
                         {
-                            _context.CurrentPathIndex--;
+                            _context.TransitionTo(new DockingState(_context));
                         }
                         else
                         {
-                            _context.CurrentPathIndex++;
-                        }
-
-                        var isPathComplete = _context._isReversed
-                            ? _context.CurrentPathIndex < 0
-                            : _context.CurrentPathIndex >= _context.CurrentPath.Waypoints.Count;
-                        if (isPathComplete)
-                        {
-                            _context.TransitionTo(new StopPathState(_context));
-                        }
-                        else
-                        {
-                            var nextPoint = _context.CurrentPath.Waypoints[_context.CurrentPathIndex];
-                            if (nextPoint.IsDocking)
-                            {
-                                _context.TransitionTo(new DockingState(_context));
-                            }
-                            else
-                            {
-                                _context.TransitionTo(new MovingState(_context));
-                            }
+                            // Not a docking point, move to position
+                            _context.TransitionTo(new MovingState(_context));
                         }
                     }
                 }
@@ -687,6 +723,12 @@ namespace IngameScript
                     _context.Status.docking = false;
                     _context.Status.undocking = false;
                     _context.Status.currentStateName = "MovingState";
+                    
+                    // Log state transition
+                    if (_context._pathNavigation._remoteControl != null)
+                    {
+                        _context._pathNavigation._remoteControl.CustomData += $"\n[{DateTime.Now:HH:mm:ss}] PathNavigation: MovingState";
+                    }
                 }
 
                 public override void Execute()
@@ -698,8 +740,28 @@ namespace IngameScript
                     if (_context._pathNavigation._navigation.NavigateTo(currentPoint.WorldMatrix.Translation,
                             _context._maxSpeed))
                     {
-                        // Position reached, now align with this point's orientation
-                        _context.TransitionTo(new AligningState(_context));
+                        // Position reached, move to next point
+                        if (_context._isReversed)
+                        {
+                            _context.CurrentPathIndex--;
+                        }
+                        else
+                        {
+                            _context.CurrentPathIndex++;
+                        }
+
+                        var isPathComplete = _context._isReversed
+                            ? _context.CurrentPathIndex < 0
+                            : _context.CurrentPathIndex >= _context.CurrentPath.Waypoints.Count;
+                        if (isPathComplete)
+                        {
+                            _context.TransitionTo(new StopPathState(_context));
+                        }
+                        else
+                        {
+                            // Move to next point (align first)
+                            _context.TransitionTo(new AligningState(_context));
+                        }
                     }
                 }
                 #endregion
@@ -728,6 +790,12 @@ namespace IngameScript
                     _context.Status.docking = true;
                     _context.Status.undocking = false;
                     _context.Status.currentStateName = "DockingState";
+                    
+                    // Log state transition
+                    if (_context._pathNavigation._remoteControl != null)
+                    {
+                        _context._pathNavigation._remoteControl.CustomData += $"\n[{DateTime.Now:HH:mm:ss}] PathNavigation: DockingState";
+                    }
                 }
 
                 public override void Execute()
@@ -736,9 +804,11 @@ namespace IngameScript
 
                     if (_approachingDock)
                     {
-                        // Step 1: Move to approach position using current waypoint's rotation
+                        // Step 1: Move to approach position using stored docking direction
                         _context._pathNavigation._navigation.Precision = _context._pathNavigation.NormalNavPrecision;
-                        var forwardDirection = currentPoint.WorldMatrix.Forward;
+                        var forwardDirection = currentPoint.DockingDir.LengthSquared() > 0 ? 
+                                             currentPoint.DockingDir : 
+                                             currentPoint.WorldMatrix.Forward;
                         var approachPosition = currentPoint.WorldMatrix.Translation +
                                                forwardDirection * _context._pathNavigation.ApproachDistance;
 
@@ -800,6 +870,12 @@ namespace IngameScript
                     _context.Status.docking = true;
                     _context.Status.undocking = false;
                     _context.Status.currentStateName = "ConnectingState";
+                    
+                    // Log state transition
+                    if (_context._pathNavigation._remoteControl != null)
+                    {
+                        _context._pathNavigation._remoteControl.CustomData += $"\n[{DateTime.Now:HH:mm:ss}] PathNavigation: ConnectingState";
+                    }
 
                     var currentPoint = _context.CurrentPath.Waypoints[_context.CurrentPathIndex];
                     _originalPosition = currentPoint.WorldMatrix.Translation;
@@ -928,9 +1004,11 @@ namespace IngameScript
                 public override void Execute()
                 {
                     var currentPoint = _context.CurrentPath.Waypoints[_context.CurrentPathIndex];
-                    var forwardDirection = currentPoint.WorldMatrix.Forward;
+                    var forwardDirection = currentPoint.DockingDir.LengthSquared() > 0 ? 
+                                         currentPoint.DockingDir : 
+                                         currentPoint.WorldMatrix.Forward;
 
-                    // Move away from current docking point using current waypoint's forward direction
+                    // Move away from current docking point using stored docking direction
                     var targetPosition = currentPoint.WorldMatrix.Translation +
                                          forwardDirection * _context._pathNavigation.ApproachDistance;
                     _context._pathNavigation._navigation.Precision = _context._pathNavigation.NormalNavPrecision;

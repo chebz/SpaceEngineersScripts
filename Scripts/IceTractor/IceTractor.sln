@@ -1,0 +1,46 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.13.35818.85
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IceTractor", "IceTractor\IceTractor.csproj", "{F9D4DDDC-A95D-4915-A5B8-BB0A9F6C397E}"
+EndProject
+Project("{D954291E-2A0B-460D-934E-DC6B0785DB48}") = "Mdk.StateMachine", "..\..\Mixin\Mdk.StateMachine\Mdk.StateMachine.shproj", "{1C3F7317-7C4A-4A29-A1FC-EF6294D9807A}"
+EndProject
+Project("{D954291E-2A0B-460D-934E-DC6B0785DB48}") = "Mdk.Utils", "..\..\Mixin\Mdk.Utils\Mdk.Utils.shproj", "{80F3AB8A-AF18-4C83-B2D2-B559AADA29FF}"
+EndProject
+Project("{D954291E-2A0B-460D-934E-DC6B0785DB48}") = "Mdk.CustomDataConnector", "..\..\Mixin\Mdk.CustomDataConnector\Mdk.CustomDataConnector.shproj", "{20273712-5FDE-4021-AA70-EDF2506E507C}"
+EndProject
+Project("{D954291E-2A0B-460D-934E-DC6B0785DB48}") = "Mdk.RoverNavigation", "..\..\Mixin\Mdk.RoverNavigation\Mdk.RoverNavigation.shproj", "{8A3CDCC5-4B55-4D87-A415-698A0E1FF06F}"
+EndProject
+Project("{D954291E-2A0B-460D-934E-DC6B0785DB48}") = "Mdk.Navigation", "..\..\Mixin\Mdk.Navigation\Mdk.Navigation.shproj", "{9800A7D0-3D7E-4F37-A9F4-C2914B9745DC}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{F9D4DDDC-A95D-4915-A5B8-BB0A9F6C397E}.Debug|x64.ActiveCfg = Debug|x64
+		{F9D4DDDC-A95D-4915-A5B8-BB0A9F6C397E}.Debug|x64.Build.0 = Debug|x64
+		{F9D4DDDC-A95D-4915-A5B8-BB0A9F6C397E}.Release|x64.ActiveCfg = Release|x64
+		{F9D4DDDC-A95D-4915-A5B8-BB0A9F6C397E}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {333A9C8E-DCAD-49F1-B7C4-CDC4A5978A10}
+	EndGlobalSection
+	GlobalSection(SharedMSBuildProjectFiles) = preSolution
+		..\..\Mixin\Mdk.StateMachine\Mdk.StateMachine.projitems*{1c3f7317-7c4a-4a29-a1fc-ef6294d9807a}*SharedItemsImports = 13
+		..\..\Mixin\Mdk.CustomDataConnector\Mdk.CustomDataConnector.projitems*{20273712-5fde-4021-aa70-edf2506e507c}*SharedItemsImports = 13
+		..\..\Mixin\Mdk.Utils\Mdk.Utils.projitems*{80f3ab8a-af18-4c83-b2d2-b559aada29ff}*SharedItemsImports = 13
+		..\..\Mixin\Mdk.RoverNavigation\Mdk.RoverNavigation.projitems*{8a3cdcc5-4b55-4d87-a415-698a0e1ff06f}*SharedItemsImports = 13
+		..\..\Mixin\Mdk.Navigation\Mdk.Navigation.projitems*{9800a7d0-3d7e-4f37-a9f4-c2914b9745dc}*SharedItemsImports = 13
+		..\..\Mixin\Mdk.CustomDataConnector\Mdk.CustomDataConnector.projitems*{f9d4dddc-a95d-4915-a5b8-bb0a9f6c397e}*SharedItemsImports = 5
+		..\..\Mixin\Mdk.RoverNavigation\Mdk.RoverNavigation.projitems*{f9d4dddc-a95d-4915-a5b8-bb0a9f6c397e}*SharedItemsImports = 5
+		..\..\Mixin\Mdk.StateMachine\Mdk.StateMachine.projitems*{f9d4dddc-a95d-4915-a5b8-bb0a9f6c397e}*SharedItemsImports = 5
+		..\..\Mixin\Mdk.Utils\Mdk.Utils.projitems*{f9d4dddc-a95d-4915-a5b8-bb0a9f6c397e}*SharedItemsImports = 5
+	EndGlobalSection
+EndGlobal

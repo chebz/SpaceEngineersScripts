@@ -1,0 +1,41 @@
+=== ALIGNMENT DEBUG (Quaternion Method) ===
+            Current Matrix:
+            M11: -0.015  M12: -0.568  M13: -0.823  M14: 0.000
+            M21: 1.000  M22: -0.004  M23: -0.015  M24: 0.000
+            M31: 0.005  M32: -0.823  M33: 0.568  M34: 0.000
+            M41: 0.000  M42: 0.000  M43: 0.000  M44: 1.000
+            Fwd: (-0.005, 0.823, -0.568)
+            Rgt: (-0.015, -0.568, -0.823)
+            Up:  (1.000, -0.004, -0.015)
+            Pos: (0.000, 0.000, 0.000)
+
+            Target Matrix:
+            M11: -0.812  M12: 0.583  M13: -0.028  M14: 0.000
+            M21: -0.043  M22: -0.012  M23: 0.999  M24: 0.000
+            M31: 0.582  M32: 0.813  M33: 0.035  M34: 0.000
+            M41: 0.000  M42: 0.000  M43: 0.000  M44: 1.000
+            Fwd: (-0.582, -0.813, -0.035)
+            Rgt: (-0.812, 0.583, -0.028)
+            Up:  (-0.043, -0.012, 0.999)
+            Pos: (0.000, 0.000, 0.000)
+
+            Quaternion Analysis:
+            Current Quat: (0.324, 0.333, -0.630, 0.622)
+            Target Quat:  (0.203, 0.664, 0.682, 0.229)
+            Error Quat:   (0.697, -0.012, 0.717, 0.000)
+            Angle: 3.141 rad (180.0°)
+            Axis: (0.697, -0.012, 0.717)
+            Rotation Vector World: (2.190, -0.038, 2.252)
+            Local Rotation: (-1.863, 2.162, 1.329)
+            Local Angular Vel: (0.000, -0.008, -0.009)
+            Angular Vel Damping: 0.80
+            Compensated Local Rotation: (-1.863, 2.162, 1.329)
+
+            Control Errors (Degrees):
+            Yaw Error: 123.9° (2.162 rad)
+            Pitch Error: -106.8° (-1.863 rad)
+            Roll Error: 76.2° (1.329 rad)
+
+            World Angular Velocity: (-0.008, 0.007, -0.005)
+            Rotation Vector Length: 3.141
+            

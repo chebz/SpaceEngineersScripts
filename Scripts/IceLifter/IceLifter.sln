@@ -1,0 +1,50 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.13.35818.85
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IceLifter", "IceLifter\IceLifter.csproj", "{097CFEC5-A547-43F5-BC64-B0E6E71B167C}"
+EndProject
+Project("{D954291E-2A0B-460D-934E-DC6B0785DB48}") = "Mdk.Utils", "..\..\Mixin\Mdk.Utils\Mdk.Utils.shproj", "{80F3AB8A-AF18-4C83-B2D2-B559AADA29FF}"
+EndProject
+Project("{D954291E-2A0B-460D-934E-DC6B0785DB48}") = "Mdk.CustomDataConnector", "..\..\Mixin\Mdk.CustomDataConnector\Mdk.CustomDataConnector.shproj", "{20273712-5FDE-4021-AA70-EDF2506E507C}"
+EndProject
+Project("{D954291E-2A0B-460D-934E-DC6B0785DB48}") = "Mdk.Navigation", "..\..\Mixin\Mdk.Navigation\Mdk.Navigation.shproj", "{8A3CDCC5-4B55-4D87-A415-698A0E1FF06F}"
+EndProject
+Project("{D954291E-2A0B-460D-934E-DC6B0785DB48}") = "Mdk.StateMachine", "..\..\Mixin\Mdk.StateMachine\Mdk.StateMachine.shproj", "{1C3F7317-7C4A-4A29-A1FC-EF6294D9807A}"
+EndProject
+Project("{D954291E-2A0B-460D-934E-DC6B0785DB48}") = "Mdk.PathNavigation", "..\..\Mixin\Mdk.PathNavigation\Mdk.PathNavigation.shproj", "{B0A8CFAE-B07D-4EE7-A16A-CC56BCDDFE2D}"
+EndProject
+Project("{D954291E-2A0B-460D-934E-DC6B0785DB48}") = "Mdk.NavigationWithCollisionAvoidance", "..\..\Mixin\Mdk.NavigationWithCollisionAvoidance\Mdk.NavigationWithCollisionAvoidance.shproj", "{E7EC0BC3-5C17-457A-ACEF-53EC4C16EC90}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{097CFEC5-A547-43F5-BC64-B0E6E71B167C}.Debug|x64.ActiveCfg = Debug|x64
+		{097CFEC5-A547-43F5-BC64-B0E6E71B167C}.Debug|x64.Build.0 = Debug|x64
+		{097CFEC5-A547-43F5-BC64-B0E6E71B167C}.Release|x64.ActiveCfg = Release|x64
+		{097CFEC5-A547-43F5-BC64-B0E6E71B167C}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {1954590A-8F32-49BA-ACA8-7E327F7F805E}
+	EndGlobalSection
+	GlobalSection(SharedMSBuildProjectFiles) = preSolution
+		..\..\Mixin\Mdk.CustomDataConnector\Mdk.CustomDataConnector.projitems*{097cfec5-a547-43f5-bc64-b0e6e71b167c}*SharedItemsImports = 5
+		..\..\Mixin\Mdk.NavigationWithCollisionAvoidance\Mdk.NavigationWithCollisionAvoidance.projitems*{097cfec5-a547-43f5-bc64-b0e6e71b167c}*SharedItemsImports = 5
+		..\..\Mixin\Mdk.Navigation\Mdk.Navigation.projitems*{097cfec5-a547-43f5-bc64-b0e6e71b167c}*SharedItemsImports = 5
+		..\..\Mixin\Mdk.StateMachine\Mdk.StateMachine.projitems*{097cfec5-a547-43f5-bc64-b0e6e71b167c}*SharedItemsImports = 5
+		..\..\Mixin\Mdk.Utils\Mdk.Utils.projitems*{097cfec5-a547-43f5-bc64-b0e6e71b167c}*SharedItemsImports = 5
+		..\..\Mixin\Mdk.StateMachine\Mdk.StateMachine.projitems*{1c3f7317-7c4a-4a29-a1fc-ef6294d9807a}*SharedItemsImports = 13
+		..\..\Mixin\Mdk.CustomDataConnector\Mdk.CustomDataConnector.projitems*{20273712-5fde-4021-aa70-edf2506e507c}*SharedItemsImports = 13
+		..\..\Mixin\Mdk.Utils\Mdk.Utils.projitems*{80f3ab8a-af18-4c83-b2d2-b559aada29ff}*SharedItemsImports = 13
+		..\..\Mixin\Mdk.Navigation\Mdk.Navigation.projitems*{8a3cdcc5-4b55-4d87-a415-698a0e1ff06f}*SharedItemsImports = 13
+		..\..\Mixin\Mdk.PathNavigation\Mdk.PathNavigation.projitems*{b0a8cfae-b07d-4ee7-a16a-cc56bcddfe2d}*SharedItemsImports = 13
+		..\..\Mixin\Mdk.NavigationWithCollisionAvoidance\Mdk.NavigationWithCollisionAvoidance.projitems*{e7ec0bc3-5c17-457a-acef-53ec4c16ec90}*SharedItemsImports = 13
+	EndGlobalSection
+EndGlobal

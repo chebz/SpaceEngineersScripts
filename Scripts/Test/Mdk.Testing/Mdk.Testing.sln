@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.13.35818.85 d17.13
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Mdk.Testing", "Mdk.Testing\Mdk.Testing.csproj", "{13AA454E-9DDE-4D63-8FD3-349A390E39F7}"
+EndProject
+Project("{D954291E-2A0B-460D-934E-DC6B0785DB48}") = "Mdk.Utils", "..\..\..\Mixin\Mdk.Utils\Mdk.Utils.shproj", "{80F3AB8A-AF18-4C83-B2D2-B559AADA29FF}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{13AA454E-9DDE-4D63-8FD3-349A390E39F7}.Debug|x64.ActiveCfg = Debug|x64
+		{13AA454E-9DDE-4D63-8FD3-349A390E39F7}.Debug|x64.Build.0 = Debug|x64
+		{13AA454E-9DDE-4D63-8FD3-349A390E39F7}.Release|x64.ActiveCfg = Release|x64
+		{13AA454E-9DDE-4D63-8FD3-349A390E39F7}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {BC8836B0-6F6F-4B66-8751-C71F88DDCEDF}
+	EndGlobalSection
+	GlobalSection(SharedMSBuildProjectFiles) = preSolution
+		..\..\..\Mixin\Mdk.Utils\Mdk.Utils.projitems*{13aa454e-9dde-4d63-8fd3-349a390e39f7}*SharedItemsImports = 5
+		..\..\..\Mixin\Mdk.Utils\Mdk.Utils.projitems*{80f3ab8a-af18-4c83-b2d2-b559aada29ff}*SharedItemsImports = 13
+	EndGlobalSection
+EndGlobal

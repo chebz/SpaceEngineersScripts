@@ -1,0 +1,44 @@
+=== ALIGNMENT DEBUG (Unity Quaternion Method) ===
+            Current Matrix:
+            M11: 0.433  M12: 0.594  M13: -0.678  M14: 23059.400
+            M21: -0.810  M22: 0.586  M23: -0.004  M24: 8467.064
+            M31: 0.395  M32: 0.551  M33: 0.735  M34: 54783.540
+            M41: 0.000  M42: 0.000  M43: 0.000  M44: 1.000
+            Fwd: (-0.678, -0.004, 0.735)
+            Rgt: (0.433, -0.810, 0.395)
+            Up:  (0.594, 0.586, 0.551)
+            Pos: (23059.400, 8467.064, 54783.540)
+
+            Target Matrix:
+            M11: -0.305  M12: 0.339  M13: 0.890  M14: 23046.160
+            M21: 0.941  M22: 0.249  M23: 0.228  M24: 8459.215
+            M31: -0.144  M32: 0.907  M33: -0.395  M34: 54779.840
+            M41: 0.000  M42: 0.000  M43: 0.000  M44: 0.000
+            Fwd: (0.890, 0.228, -0.395)
+            Rgt: (-0.305, 0.941, -0.144)
+            Up:  (0.339, 0.249, 0.907)
+            Pos: (23046.160, 8459.215, 54779.840)
+
+            Quaternion Analysis:
+            Current Quat: (0.167, -0.323, -0.423, 0.830)
+            Target Quat:  (0.458, 0.698, 0.407, 0.370)
+            Error Quat:   (-0.482, -0.437, -0.759, 0.014)
+            Angle: 3.114 rad (178.4°)
+            Axis: (-0.482, -0.437, -0.759)
+            Rotation Vector World: (-1.502, -1.361, -2.364)
+            Local Rotation: (-0.482, -2.993, -0.714)
+
+            Control Errors (Degrees):
+            Yaw Error: -171.5° (-2.993 rad)
+            Pitch Error: -27.6° (-0.482 rad)
+            Roll Error: -40.9° (-0.714 rad)
+
+            PID Outputs:
+            Yaw Output: -2.993
+            Pitch Output: -0.482
+            Roll Output: -0.714
+
+            Rotation Vector Length: 3.114
+UnityEngine.Debug:Log (object)
+TargetRotation:AlignWithWorldMatrix (UnityEngine.Matrix4x4,UnityEngine.Matrix4x4) (at Assets/Scripts/TargetRotation.cs:197)
+TargetRotation:Start () (at Assets/Scripts/TargetRotation.cs:30)

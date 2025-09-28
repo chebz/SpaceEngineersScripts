@@ -6,8 +6,6 @@
     <SharedGUID>8a3cdcc5-4b55-4d87-a415-698a0e1ff06f</SharedGUID>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="$(MSBuildThisFileDirectory)Alignment.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)Navigation.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)PID.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)PathNavigation.cs" />
   </ItemGroup>
 </Project>
