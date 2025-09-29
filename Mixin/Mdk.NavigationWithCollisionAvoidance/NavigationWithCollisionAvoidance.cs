@@ -17,6 +17,7 @@ namespace IngameScript
 
         #region Constants
         private const double DETOUR_DISTANCE = 10.0; // meters
+        private const double MIN_SPEED = 5.0; // meters per second
         #endregion
 
         #region Fields
@@ -435,7 +436,7 @@ namespace IngameScript
 
                     // limit max speed based on distance to target
                     var distance = Vector3D.Distance(_context._navigation._remoteControl.GetPosition(), _targetPosition);
-                    var maxSpeed = Math.Max(2.0, Math.Min(_context._maxSpeed, distance / 5.0));
+                    var maxSpeed = Math.Max(MIN_SPEED, Math.Min(_context._maxSpeed, distance / 10.0));
 
                     var raycastDistance = maxSpeed * 4.0;
                     
@@ -446,7 +447,7 @@ namespace IngameScript
                     if (CheckObstaclesWithRaycast(raycastDistance, bounds, out closestDistance))
                     {
                         // Obstacle detected - slow down
-                        maxSpeed = Math.Max(2.0, Math.Min(maxSpeed, closestDistance / 5.0));
+                        maxSpeed = Math.Max(MIN_SPEED, Math.Min(maxSpeed, closestDistance / 5.0));
                         _context._navigation._program.Echo($"Obstacle detected at distance: {closestDistance:F1}m, slowing down to {maxSpeed:F1}m/s");
                     }
 
@@ -461,6 +462,7 @@ namespace IngameScript
                         else
                         {
                             _context._navigation._program.Echo("NavigationWithCollisionAvoidance: Arrived!");
+                            _context._navigationState = NavigationState.Idle;
                             _context.TransitionTo(new IdleState(_context));
                         }
                     }

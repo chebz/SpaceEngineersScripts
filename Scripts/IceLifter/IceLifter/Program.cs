@@ -26,7 +26,7 @@ namespace IngameScript
         #region Constants
         private const string BROADCAST_TAG = "DroneControl";
         private const string UNDOCKING_PATH_NAME = "UndockingPath";
-        private const double DOCKING_OFFSET = 25.0; // meters above target along gravity
+        private const double DOCKING_OFFSET = 15.0; // meters above target along gravity
         private const double CONNECTOR_OFFSET = 1.1; // meters from connector for docking
         #endregion
 
@@ -576,7 +576,7 @@ namespace IngameScript
                     }
                     var otherConnector = _context.program._connector.OtherConnector;
                     var undockingDir = otherConnector.WorldMatrix.Forward;
-                    _approachPosition = _context.program._remoteControl.GetPosition() + (undockingDir * DOCKING_OFFSET * 2);
+                    _approachPosition = _context.program._remoteControl.GetPosition() + (undockingDir * DOCKING_OFFSET);
                     _context.program._connector.Disconnect();
                     _context.program._navigation.Precision = 1.0;
                 }
@@ -767,10 +767,8 @@ namespace IngameScript
 
             private class NavigatingState : State<IceLifterContext>
             {
-                private const double MINIMUM_DIST_TO_GROUND = 15.0; // meters
                 private Vector3D _targetPosition;
                 private long _targetEntityId;
-                private Vector3D? _adjustedPosition;
 
                 public NavigatingState(IceLifterContext context, Vector3D targetPosition, long targetEntityId = 0) : base(context)
                 {
@@ -783,7 +781,7 @@ namespace IngameScript
                 {
                     _context.program.SetLightSettings(Color.Yellow, false); // Solid yellow
                     _context.program.Echo("Navigating State");
-                    _context.program._navigationWithCollisionAvoidance.NavigateTo(_targetPosition, 25.0);
+                    _context.program._navigationWithCollisionAvoidance.NavigateTo(_targetPosition, 100.0);
                 }
 
                 public override void Execute()
