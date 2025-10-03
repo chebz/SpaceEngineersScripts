@@ -1,0 +1,9 @@
+// Alignment PID Settings (Gyro Control)
+KP=10.0
+KI=0
+KD=0
+
+// Navigation PID Settings (Thruster Control)  
+NAV_KP=5.0
+NAV_KI=1.0
+NAV_KD=0

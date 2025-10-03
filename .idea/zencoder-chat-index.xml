@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ai.zencoder.plugin.chat.index">
+    <option name="activeChatId" value="f328d515-05f7-44fe-9663-7de7be21f88f" />
+    <option name="chatMetadata" value="{&quot;f328d515-05f7-44fe-9663-7de7be21f88f&quot;:{&quot;id&quot;:&quot;f328d515-05f7-44fe-9663-7de7be21f88f&quot;,&quot;title&quot;:&quot;Repository Information Generation&quot;,&quot;createdAt&quot;:1759470744761,&quot;updatedAt&quot;:1759471401234,&quot;isNameGenerated&quot;:true,&quot;messageCount&quot;:6,&quot;lastMessagePreview&quot;:&quot;You're right about the vertical navigation issue. Using the basic `_navigation.NavigateTo()` for ver...&quot;}}" />
+  </component>
+</project>

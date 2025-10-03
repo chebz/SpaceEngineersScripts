@@ -1,4 +1,0 @@
-Distance: 18.5546875
-Elevation: 22.9788351297823
-MaxExtent: 20.7241711616516
-BottomExtent: 2.16948366165161

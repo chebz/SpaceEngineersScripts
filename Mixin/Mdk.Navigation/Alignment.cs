@@ -325,6 +325,21 @@ namespace IngameScript
             return AlignWithWorldMatrix(targetMatrix);
         }
 
+        public bool AlignWithTargetYawOnly(Vector3D targetPosition)
+        {
+            if (_remoteControl == null) 
+            {
+                return true;
+            }
+            
+            var currentPosition = _remoteControl.CenterOfMass;
+            var directionToTarget = Vector3D.Normalize(targetPosition - currentPosition);
+            
+            var yaw = CalculateYawToTarget(targetPosition);
+            var targetMatrix = YawPitchRollToWorldMatrix(yaw, 0, 0);
+            return AlignWithWorldMatrix(targetMatrix);
+        }
+
         public void ApplyYawForce(double yawForce)
         {
             foreach (var gyro in _gyros)

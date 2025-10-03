@@ -170,41 +170,24 @@ namespace IngameScript
                 }
             }
 
-            if (_thrusters[ThrusterDir.Forward].Count == 0)
+            // Check if we have at least some thrusters (any direction)
+            var totalThrusters = _thrusters.Values.Sum(list => list.Count);
+            if (totalThrusters == 0)
             {
-                errorMessage = "Navigation: No forward thrusters found!";
+                errorMessage = "Navigation: No thrusters found!";
                 return false;
             }
 
-            if (_thrusters[ThrusterDir.Backward].Count == 0)
-            {
-                errorMessage = "Navigation: No backward thrusters found!";
-                return false;
-            }
-
-            if (_thrusters[ThrusterDir.Up].Count == 0)
-            {
-                errorMessage = "Navigation: No up thrusters found!";
-                return false;
-            }
-
-            if (_thrusters[ThrusterDir.Down].Count == 0)
-            {
-                errorMessage = "Navigation: No down thrusters found!";
-                return false;
-            }
-
-            if (_thrusters[ThrusterDir.Right].Count == 0)
-            {
-                errorMessage = "Navigation: No right thrusters found!";
-                return false;
-            }
-
-            if (_thrusters[ThrusterDir.Left].Count == 0)
-            {
-                errorMessage = "Navigation: No left thrusters found!";
-                return false;
-            }
+            // Log which thruster directions are available (for debugging)
+            var availableDirections = new List<string>();
+            if (_thrusters[ThrusterDir.Forward].Count > 0) availableDirections.Add($"Forward({_thrusters[ThrusterDir.Forward].Count})");
+            if (_thrusters[ThrusterDir.Backward].Count > 0) availableDirections.Add($"Backward({_thrusters[ThrusterDir.Backward].Count})");
+            if (_thrusters[ThrusterDir.Up].Count > 0) availableDirections.Add($"Up({_thrusters[ThrusterDir.Up].Count})");
+            if (_thrusters[ThrusterDir.Down].Count > 0) availableDirections.Add($"Down({_thrusters[ThrusterDir.Down].Count})");
+            if (_thrusters[ThrusterDir.Right].Count > 0) availableDirections.Add($"Right({_thrusters[ThrusterDir.Right].Count})");
+            if (_thrusters[ThrusterDir.Left].Count > 0) availableDirections.Add($"Left({_thrusters[ThrusterDir.Left].Count})");
+            
+            _program.Echo($"Navigation: Available thruster directions: {string.Join(", ", availableDirections)}");
 
             return true;
         }
@@ -308,6 +291,15 @@ namespace IngameScript
             var upN = Math.Max(0, Vector3D.Dot(desiredForce, wm.Up));
             var downN = Math.Max(0, -Vector3D.Dot(desiredForce, wm.Up));
 
+            // Check if down thrusters are missing and compensate with up thrust
+            if (downN > 0 && (!_thrusters.ContainsKey(ThrusterDir.Down) || _thrusters[ThrusterDir.Down].Count == 0))
+            {
+                // No down thrusters available, reduce up thrust to compensate
+                upN = Math.Max(10000, upN - downN);
+                downN = 0; // Can't provide down thrust
+                _program.Echo($"Navigation: No down thrusters, compensating with up thrust reduction");
+            }
+
             SetThrusterOverride(ThrusterDir.Forward, forwardN);
             SetThrusterOverride(ThrusterDir.Backward, backwardN);
             SetThrusterOverride(ThrusterDir.Left, leftN);
@@ -318,7 +310,7 @@ namespace IngameScript
 
         private void SetThrusterOverride(ThrusterDir dir, double requiredForce)
         {
-            if (_thrusters.Count == 0)
+            if (_thrusters.Count == 0 || !_thrusters.ContainsKey(dir) || _thrusters[dir].Count == 0)
             {
                 return;
             }
