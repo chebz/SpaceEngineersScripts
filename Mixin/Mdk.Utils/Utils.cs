@@ -45,16 +45,25 @@ namespace IngameScript
             return blocks.Count > index ? blocks[index] : null;
         }
 
-        public static List<T> GetLocalBlocksInGroup<T>(this Program program, string groupName) where T : class, IMyTerminalBlock
-        {
-            var group = program.GridTerminalSystem.GetBlockGroupWithName(groupName);
-            if (group == null)
-                return new List<T>();
+    public static List<T> GetLocalBlocksNameContains<T>(this Program program, string nameContains) where T : class, IMyTerminalBlock
+    {
+        var blocks = new List<T>();
+        program.GridTerminalSystem.GetBlocksOfType(blocks);
+        blocks = blocks
+            .Where(b => b.IsSameConstructAs(program.Me) && b.CustomName.Contains(nameContains)).ToList();
+        return blocks;
+    }
 
-            var blocks = new List<T>();
-            group.GetBlocksOfType<T>(blocks);
-            
-            return blocks.Where(b => b.IsSameConstructAs(program.Me)).ToList();
-        }
+    public static List<T> GetLocalBlocksInGroup<T>(this Program program, string groupName) where T : class, IMyTerminalBlock
+    {
+        var group = program.GridTerminalSystem.GetBlockGroupWithName(groupName);
+        if (group == null)
+            return new List<T>();
+
+        var blocks = new List<T>();
+        group.GetBlocksOfType<T>(blocks);
+        
+        return blocks.Where(b => b.IsSameConstructAs(program.Me)).ToList();
+    }
     }
 }

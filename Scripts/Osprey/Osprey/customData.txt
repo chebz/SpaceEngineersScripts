@@ -1,0 +1,17 @@
+# Alignment PID Settings
+KP:10
+KI:0
+KD:0
+
+# Navigation PID Settings
+NAV_KP:3.0
+NAV_KI:1.0
+NAV_KD:0.0
+
+# Flight Control Settings
+MAX_SPEED_ERROR:5.0
+ACCEL:0.25
+
+# Rotor Control Settings
+ROTOR_SPEED:5.0
+ROTOR_EXP:1.0

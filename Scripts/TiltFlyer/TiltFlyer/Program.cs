@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Collections.Immutable;
@@ -23,17 +23,19 @@ namespace IngameScript
     public partial class Program : MyGridProgram
     {
         #region Constants
-        private const double HOVER_HEIGHT = 10.0; // meters above ground
+        private const double HOVER_HEIGHT = 5.0; // meters above ground
         private const double MOVE_DISTANCE = 20.0; // meters forward
         #endregion
 
         #region Fields
+        private CustomDataConnector _customDataConnector;
         private TiltNavigation _tiltNavigation;
         private Alignment _alignment;
         private Navigation _navigation;
         private IMyRemoteControl _remoteControl;
         private List<IMyLightingBlock> _lights;
         private TiltFlyerContext _context;
+        private IMyEmotionControllerBlock _emotionController;
         #endregion
 
         public Program()
@@ -41,15 +43,18 @@ namespace IngameScript
             Runtime.UpdateFrequency = UpdateFrequency.Update1;
 
             // Initialize systems
+            _customDataConnector = new CustomDataConnector();
+            _customDataConnector.Initialize(this);
+            
             _tiltNavigation = new TiltNavigation();
             _alignment = new Alignment();
             _navigation = new Navigation();
             _lights = this.GetLocalBlocks<IMyLightingBlock>();
             _remoteControl = this.GetLocalBlock<IMyRemoteControl>();
-
+            _emotionController = this.GetLocalBlock<IMyEmotionControllerBlock>();
             // Initialize systems
             string errorMessage;
-            if (!_alignment.Initialize(this, out errorMessage))
+            if (!_alignment.Initialize(this, _customDataConnector, out errorMessage))
             {
                 Echo($"Alignment Error: {errorMessage}");
             }
@@ -57,7 +62,7 @@ namespace IngameScript
             // Parse PID values from custom data
             ParseAlignmentPidValues();
 
-            if (!_navigation.Initialize(this, out errorMessage))
+            if (!_navigation.Initialize(this, _customDataConnector, out errorMessage))
             {
                 Echo($"Navigation Error: {errorMessage}");
             }

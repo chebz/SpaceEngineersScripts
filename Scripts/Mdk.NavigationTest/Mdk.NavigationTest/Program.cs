@@ -453,7 +453,7 @@ namespace IngameScript
 
                 _context.program.Echo($"factorGravity: {_context.program._navigation.FactorGravity}\n" +
                                       $"kp: {_context.program._navigation.PidXPos.Kp}, ki: {_context.program._navigation.PidXPos.Ki}, kd: {_context.program._navigation.PidXPos.Kd}\n" +
-                                      $"brakingDistanceFactor: {_context.program._navigation.BrakingDistanceFactor}\n" +
+                                      $"accel: {_context.program._navigation.Accel}\n" +
                                       $"precision: {_context.program._navigation.Precision}");
 
                 return true;

@@ -10,9 +10,43 @@ namespace IngameScript
     // Handles ship orientation and gyro control
     public class Alignment
     {
+        public class AlignmentSection : Section
+        {
+            private Alignment _alignment;
+            public DoubleProperty Precision { get; } = new DoubleProperty("Precision", PRECISION_DEFAULT);
+            public DoubleProperty KP { get; } = new DoubleProperty("KP", KP_GYRO_DEFAULT);
+            public DoubleProperty KI { get; } = new DoubleProperty("KI", KI_GYRO_DEFAULT);
+            public DoubleProperty KD { get; } = new DoubleProperty("KD", KD_GYRO_DEFAULT);
+
+            public AlignmentSection(Alignment alignment) : base("Alignment")
+            {
+                _alignment = alignment;
+                _properties.Add(Precision);
+                _properties.Add(KP);
+                _properties.Add(KI);
+                _properties.Add(KD);
+                KP.ValueChanged += (value) => _alignment.PidVectorYaw.Kp = value;
+                KI.ValueChanged += (value) => {
+                    _alignment.PidVectorYaw.Ki = value;
+                    _alignment.PidVectorPitch.Ki = value;
+                    _alignment.PidVectorRoll.Ki = value;
+                };
+                KD.ValueChanged += (value) => {
+                    _alignment.PidVectorYaw.Kd = value;
+                    _alignment.PidVectorPitch.Kd = value;
+                    _alignment.PidVectorRoll.Kd = value;
+                };
+                KD.ValueChanged += (value) => {
+                    _alignment.PidVectorYaw.Kd = value;
+                    _alignment.PidVectorPitch.Kd = value;
+                    _alignment.PidVectorRoll.Kd = value;
+                };
+            }
+        }
+
         #region Fields
         // Gyro PID settings
-        private const double KP_GYRO_DEFAULT = 10;
+        private const double KP_GYRO_DEFAULT = 1;
         private const double KI_GYRO_DEFAULT = 0.0;
         private const double KD_GYRO_DEFAULT = 0.0;
         private const double PID_TIME_STEP_DEFAULT = 1.0 / 6.0;
@@ -21,6 +55,8 @@ namespace IngameScript
         private List<IMyGyro> _gyros = new List<IMyGyro>();
         private Program _program;
         private IMyRemoteControl _remoteControl;
+        private CustomDataConnector _customDataConnector;
+        private AlignmentSection _section;
         #endregion
 
         #region Properties
@@ -33,15 +69,13 @@ namespace IngameScript
 
         public PID PidVectorRoll { get; } =
             new PID(KP_GYRO_DEFAULT, KI_GYRO_DEFAULT, KD_GYRO_DEFAULT, PID_TIME_STEP_DEFAULT);
-
-        // Precision settings
-        public double Precision { get; set; } = PRECISION_DEFAULT;
         #endregion
 
         #region Methods
-        public bool Initialize(Program program, out string errorMessage)
+        public bool Initialize(Program program, CustomDataConnector customDataConnector, out string errorMessage)
         {
             _program = program;
+            _customDataConnector = customDataConnector;
             errorMessage = string.Empty;
 
             // Initialize remote control
@@ -60,11 +94,15 @@ namespace IngameScript
                 return false;
             }
 
+            _section = new AlignmentSection(this);
+            _customDataConnector.AddSection(_section);
+
             return true;
         }
 
+
         public bool AlignWithWorldMatrix(MatrixD targetMatrix)
-        {
+        {            
             var currentMatrix = _remoteControl.WorldMatrix;
             var angularVelocity = _remoteControl.GetShipVelocities().AngularVelocity;
 
@@ -72,7 +110,7 @@ namespace IngameScript
             var forward = currentMatrix.Forward;
             var right = currentMatrix.Right;
             var up = currentMatrix.Up;
-
+            
             // Target forward, right, and up (world space)
             var tForward = targetMatrix.Forward;
             var tRight = targetMatrix.Right;
@@ -89,7 +127,7 @@ namespace IngameScript
 
             // Extract errors from the most relevant components
             var yawError = localForwardError.Y; // Forward error in Y = yaw needed
-            var pitchError = -localForwardError.X; // Forward error in X = pitch needed
+            var pitchError = localForwardError.X; // Forward error in X = pitch needed
             var rollError = -localUpError.Z; // Up error in Z = roll needed (negated)
 
             // PID outputs
@@ -101,10 +139,10 @@ namespace IngameScript
 
             // Check alignment using individual error magnitudes
             var allAligned =
-                Math.Abs(yawError) < Precision &&
-                Math.Abs(pitchError) < Precision &&
-                Math.Abs(rollError) < Precision &&
-                angularVelocity.Length() < Precision;
+                Math.Abs(yawError) < _section.Precision.Value &&
+                Math.Abs(pitchError) < _section.Precision.Value &&
+                Math.Abs(rollError) < _section.Precision.Value &&
+                angularVelocity.Length() < _section.Precision.Value;
 
             if (allAligned)
             {
@@ -112,6 +150,55 @@ namespace IngameScript
             }
 
             return allAligned;
+        }
+
+        public bool AlignWithYawPitchRoll(double? yaw, double pitch, double roll)
+        {
+            var angularVelocity = _remoteControl.GetShipVelocities().AngularVelocity;
+
+            // Calculate ship's current YPR relative to planet
+            double currentYaw, currentPitch, currentRoll;
+            CalculateYawPitchRoll(out currentYaw, out currentPitch, out currentRoll);
+
+            // Calculate errors
+            var yawError = yaw.HasValue ? NormalizeAngle(yaw.Value + currentYaw) : 0.0;
+            var pitchError = pitch + currentPitch;
+            var rollError = roll - currentRoll;
+
+            // Apply PID control
+            var yawOutput = yaw.HasValue ? PidVectorYaw.Control(yawError) : 0.0;
+            var pitchOutput = PidVectorPitch.Control(pitchError);
+            var rollOutput = PidVectorRoll.Control(rollError);
+
+            var allAligned =
+                Math.Abs(yawError) < _section.Precision.Value &&
+                Math.Abs(pitchError) < _section.Precision.Value &&
+                Math.Abs(rollError) < _section.Precision.Value &&
+                angularVelocity.Length() < _section.Precision.Value;
+
+            var velocityFactor = 0.1;
+            var finalYaw = yawOutput * velocityFactor;
+            var finalPitch = pitchOutput * velocityFactor;
+            var finalRoll = rollOutput * velocityFactor;
+
+            ApplyGyroOverrides(finalYaw, finalPitch, finalRoll);
+
+            if (allAligned)
+            {
+                Stop();
+            }
+
+            return allAligned;
+        }
+
+        private double NormalizeAngle(double angle)
+        {
+            // Normalize angle to [-π, π] range
+            while (angle > Math.PI)
+                angle -= 2 * Math.PI;
+            while (angle < -Math.PI)
+                angle += 2 * Math.PI;
+            return angle;
         }
 
         public void CalculateYawPitchRoll(out double yaw, out double pitch, out double roll)
@@ -138,7 +225,7 @@ namespace IngameScript
                 {
                     referenceDirection = Vector3D.Normalize(referenceDirection);
                     var referenceRight = Vector3D.Cross(referenceDirection, upVector);
-                    yaw = Math.Atan2(Vector3D.Dot(forwardHorizontal, referenceRight),
+                    yaw = -Math.Atan2(Vector3D.Dot(forwardHorizontal, referenceRight),
                         Vector3D.Dot(forwardHorizontal, referenceDirection));
                 }
                 else
@@ -147,7 +234,7 @@ namespace IngameScript
                     var worldYAxis = new Vector3D(0, 1, 0);
                     referenceDirection = Vector3D.Normalize(worldYAxis - Vector3D.Dot(worldYAxis, upVector) * upVector);
                     var referenceRight = Vector3D.Cross(referenceDirection, upVector);
-                    yaw = Math.Atan2(Vector3D.Dot(forwardHorizontal, referenceRight),
+                    yaw = -Math.Atan2(Vector3D.Dot(forwardHorizontal, referenceRight),
                         Vector3D.Dot(forwardHorizontal, referenceDirection));
                 }
             }
@@ -162,7 +249,7 @@ namespace IngameScript
 
             // Roll: angle between right and gravityNrm - 90 degrees  
             var rightDotProduct = Vector3D.Dot(right, gravityNormalized);
-            roll = Math.Acos(Math.Max(-1, Math.Min(1, rightDotProduct))) - Math.PI / 2;
+            roll = -(Math.Acos(Math.Max(-1, Math.Min(1, rightDotProduct))) - Math.PI / 2);
         }
 
         public double CalculateYawToTarget(Vector3D destination)
@@ -175,40 +262,75 @@ namespace IngameScript
             }
 
             var dirToDestination = Vector3D.Normalize(destination - myPosition);
-            var gravityNormalized = Vector3D.Normalize(_remoteControl.GetNaturalGravity());
-
-            // Get current yaw from the drone
-            double currentYaw, currentPitch, currentRoll;
-            CalculateYawPitchRoll(out currentYaw, out currentPitch, out currentRoll);
-
-            // Get drone's current forward direction
-            var currentForward = _remoteControl.WorldMatrix.Forward;
-
-            // Rotate current forward around gravity axis by negative current yaw to get real forward direction
-            var upVector = -gravityNormalized;
-            var rotationAxis = upVector;
-            var rotationAngle = -currentYaw;
-
-            // Apply rotation: rotate currentForward around rotationAxis by rotationAngle
-            var cosAngle = Math.Cos(rotationAngle);
-            var sinAngle = Math.Sin(rotationAngle);
-            var dotProduct = Vector3D.Dot(currentForward, rotationAxis);
-            var crossProduct = Vector3D.Cross(currentForward, rotationAxis);
-
-            var realForward = currentForward * cosAngle +
-                              crossProduct * sinAngle +
-                              rotationAxis * dotProduct * (1 - cosAngle);
+            var gravity = _remoteControl.GetNaturalGravity();
+            var upVector = gravity.LengthSquared() > 0 ? -Vector3D.Normalize(gravity) : Vector3D.Up;
 
             // Project direction to destination onto horizontal plane
-            var projectedDirection = dirToDestination - Vector3D.Dot(dirToDestination, upVector) * upVector;
-            projectedDirection = Vector3D.Normalize(projectedDirection);
+            var targetDirectionHorizontal = dirToDestination - Vector3D.Dot(dirToDestination, upVector) * upVector;
+            if (targetDirectionHorizontal.LengthSquared() < 1e-6)
+            {
+                return 0;
+            }
+            targetDirectionHorizontal = Vector3D.Normalize(targetDirectionHorizontal);
 
-            // Calculate desired yaw as angle between real forward and projected direction
-            var dot = Vector3D.Dot(realForward, projectedDirection);
-            var cross = Vector3D.Cross(realForward, projectedDirection);
-            var crossDotUp = Vector3D.Dot(cross, upVector);
+            // Use world X-axis (1,0,0) as reference direction, projected onto horizontal plane
+            var worldXAxis = new Vector3D(1, 0, 0);
+            var referenceDirection = worldXAxis - Vector3D.Dot(worldXAxis, upVector) * upVector;
+            
+            if (referenceDirection.LengthSquared() < 1e-6)
+            {
+                // If gravity is parallel to world X-axis, use Y-axis as reference
+                var worldYAxis = new Vector3D(0, 1, 0);
+                referenceDirection = worldYAxis - Vector3D.Dot(worldYAxis, upVector) * upVector;
+            }
+            
+            if (referenceDirection.LengthSquared() < 1e-6)
+            {
+                return 0;
+            }
+            referenceDirection = Vector3D.Normalize(referenceDirection);
 
-            return Math.Atan2(-crossDotUp, dot);
+            // Calculate yaw angle from reference direction to target direction
+            // Use same formula as CalculateYawPitchRoll for consistency
+            var referenceRight = Vector3D.Cross(referenceDirection, upVector);
+            referenceRight = Vector3D.Normalize(referenceRight);
+            
+            return -Math.Atan2(Vector3D.Dot(targetDirectionHorizontal, referenceRight),
+                Vector3D.Dot(targetDirectionHorizontal, referenceDirection));
+        }
+
+        public Quaternion YawPitchRollToQuaternion(double yaw, double pitch, double roll)
+        {
+            var gravity = _remoteControl.GetNaturalGravity();
+            var planetUp = gravity.LengthSquared() > 0 ? -Vector3D.Normalize(gravity) : Vector3D.Up;
+            var currentForward = _remoteControl.WorldMatrix.Forward;
+
+            var currentForwardHorizontal = currentForward - Vector3D.Dot(currentForward, planetUp) * planetUp;
+            if (currentForwardHorizontal.LengthSquared() < 1e-6)
+            {
+                currentForwardHorizontal = _remoteControl.WorldMatrix.Right;
+            }
+            currentForwardHorizontal = Vector3D.Normalize(currentForwardHorizontal);
+
+            var yawQuat = Quaternion.CreateFromAxisAngle(new Vector3((float)planetUp.X, (float)planetUp.Y, (float)planetUp.Z), (float)yaw);
+            
+            var forwardAfterYaw = Vector3D.Transform(currentForwardHorizontal, yawQuat);
+            var rightAfterYaw = Vector3D.Cross(planetUp, forwardAfterYaw);
+            rightAfterYaw = Vector3D.Normalize(rightAfterYaw);
+
+            var pitchQuat = Quaternion.CreateFromAxisAngle(new Vector3((float)rightAfterYaw.X, (float)rightAfterYaw.Y, (float)rightAfterYaw.Z), (float)pitch);
+            
+            var forwardAfterPitch = Vector3D.Transform(forwardAfterYaw, pitchQuat);
+            var upAfterPitch = Vector3D.Transform(planetUp, pitchQuat);
+            
+            var rollQuat = Quaternion.CreateFromAxisAngle(new Vector3((float)forwardAfterPitch.X, (float)forwardAfterPitch.Y, (float)forwardAfterPitch.Z), (float)roll);
+            
+            var finalUp = Vector3D.Transform(upAfterPitch, rollQuat);
+            
+            var targetMatrix = MatrixD.CreateWorld(Vector3D.Zero, forwardAfterPitch, finalUp);
+            var targetQuat = Quaternion.CreateFromRotationMatrix(targetMatrix);
+
+            return targetQuat;
         }
 
         public MatrixD YawPitchRollToWorldMatrix(double yaw, double pitch, double roll)
@@ -281,27 +403,26 @@ namespace IngameScript
         private void ApplyGyroOverrides(double yawOutput, double pitchOutput, double rollOutput)
         {
             var remoteMatrix = _remoteControl.WorldMatrix;
+
             foreach (var gyro in _gyros)
             {
                 gyro.GyroOverride = true;
-                gyro.SetValueFloat("Power", 1.0f);
+                gyro.GyroPower = 1.0f;
 
-                // Get only the rotation parts (no translation)
                 var remoteRotationMatrix = MatrixD.CreateWorld(Vector3D.Zero, remoteMatrix.Forward, remoteMatrix.Up);
-                var gyroRotationMatrix =
-                    MatrixD.CreateWorld(Vector3D.Zero, gyro.WorldMatrix.Forward, gyro.WorldMatrix.Up);
+                var gyroRotationMatrix = MatrixD.CreateWorld(Vector3D.Zero, gyro.WorldMatrix.Forward, gyro.WorldMatrix.Up);
+                
+                var remoteQuat = Quaternion.CreateFromRotationMatrix(remoteRotationMatrix);
+                var gyroQuat = Quaternion.CreateFromRotationMatrix(gyroRotationMatrix);
+                
+                var remoteToGyroQuat = Quaternion.Inverse(gyroQuat) * remoteQuat;
+                
+                var remoteRotation = new Vector3D(yawOutput, pitchOutput, rollOutput);
+                var gyroRotation = Vector3D.Transform(remoteRotation, remoteToGyroQuat);
 
-                // Transform remote control's desired rotation to gyro's local coordinate system
-                var remoteToGyro = MatrixD.Transpose(remoteRotationMatrix) * gyroRotationMatrix;
-
-                // Transform YPR outputs to gyro's coordinate system
-                var remoteRotation = new Vector3D(pitchOutput, yawOutput, rollOutput);
-                var gyroRotation = Vector3D.Transform(remoteRotation, remoteToGyro);
-
-                // Apply to gyro
-                gyro.SetValueFloat("Pitch", (float)gyroRotation.X);
-                gyro.SetValueFloat("Yaw", (float)gyroRotation.Y);
-                gyro.SetValueFloat("Roll", (float)gyroRotation.Z);
+                gyro.Yaw = (float)gyroRotation.X;
+                gyro.Pitch = (float)gyroRotation.Y;
+                gyro.Roll = (float)gyroRotation.Z;
             }
         }
 
@@ -311,32 +432,11 @@ namespace IngameScript
             {
                 return true;
             }
-
             var currentPosition = _remoteControl.CenterOfMass;
             var directionToTarget = Vector3D.Normalize(targetPosition - currentPosition);
-            
-            // Get gravity direction and create proper up vector (opposite of gravity)
             var gravityVector = _remoteControl.GetNaturalGravity();
-            var upDirection = gravityVector.LengthSquared() > 0 ? -Vector3D.Normalize(gravityVector) : Vector3D.Up;
-            
-            // Create target matrix with forward pointing to target and up aligned with anti-gravity
+            var upDirection = gravityVector.LengthSquared() > 0 ? -Vector3D.Normalize(gravityVector) : _remoteControl.WorldMatrix.Up;
             var targetMatrix = MatrixD.CreateWorld(Vector3D.Zero, directionToTarget, upDirection);
-            
-            return AlignWithWorldMatrix(targetMatrix);
-        }
-
-        public bool AlignWithTargetYawOnly(Vector3D targetPosition)
-        {
-            if (_remoteControl == null) 
-            {
-                return true;
-            }
-            
-            var currentPosition = _remoteControl.CenterOfMass;
-            var directionToTarget = Vector3D.Normalize(targetPosition - currentPosition);
-            
-            var yaw = CalculateYawToTarget(targetPosition);
-            var targetMatrix = YawPitchRollToWorldMatrix(yaw, 0, 0);
             return AlignWithWorldMatrix(targetMatrix);
         }
 

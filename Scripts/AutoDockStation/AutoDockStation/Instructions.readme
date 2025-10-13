@@ -1,0 +1,53 @@
+﻿AutoDockStation - Automatic Docking Station Manager
+
+DESCRIPTION:
+This script uses the AutoDockStation mixin to manage docking ports and coordinate with
+AutoDockDrone ships. It automatically tracks connector status, reserves docks for incoming
+ships, and manages the docking queue.
+
+REQUIRED BLOCKS:
+- Programmable Block (this script)
+- Ship Connectors tagged with "[AD]" in their name
+  Example: "Docking Connector [AD] 1"
+  Example: "Port A [AD]"
+  Example: "Hangar Bay [AD] 3"
+
+OPTIONAL BLOCKS:
+- Text Panel named "Docking Display" (for status display)
+
+COMMANDS:
+- status : Shows detailed status of all docking connectors
+
+CONFIGURATION:
+You can adjust station behavior by modifying properties:
+- UpdateInterval: How often to check reservations (default: 10 seconds)
+- ApproachDistance: Distance from connector for approach point (default: 10 meters)
+
+Example in constructor:
+    _autoDockStation.UpdateInterval = 5.0;     // Check every 5 seconds
+    _autoDockStation.ApproachDistance = 15.0;  // 15 meter approach distance
+
+HOW IT WORKS:
+1. The station scans for all connectors with "[AD]" tag on initialization
+2. It listens for docking requests from ships (broadcast or unicast)
+3. When a request arrives, it finds first available connector and reserves it
+4. It sends approach position to the requesting ship
+5. When ship arrives at approach, it sends docking coordinates
+6. It monitors reserved docks and releases them if ship doesn't arrive
+7. When ships dock, it marks connectors as occupied
+8. When ships undock, it marks connectors as available again
+
+CONNECTOR STATES:
+- Available: Ready for new ships
+- Reserved: Reserved for a specific ship (with timeout)
+- Occupied: Ship is currently docked
+
+AUTOMATIC STATION BROADCASTING:
+The station automatically responds to "requestdockingstations" broadcasts
+with its entity ID, name, and available dock count. This allows drones
+to discover available stations.
+
+RESERVATION TIMEOUT:
+If a ship reserves a dock but doesn't respond to status checks, the
+reservation is automatically released after UpdateInterval seconds.
+Ships must respond with "onmyway" to maintain their reservation.

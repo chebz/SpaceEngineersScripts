@@ -25,6 +25,8 @@ namespace IngameScript
         public virtual void Enter() { }
 
         public virtual void Execute() { }
+
+        public virtual void HandleMessage(string message, long source) { }
         #endregion
     }
 
@@ -44,7 +46,7 @@ namespace IngameScript
             }
         }
 
-        public void Execute()
+        public virtual void Execute()
         {
             if (CurrentState != null)
             {

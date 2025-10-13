@@ -1,0 +1,21 @@
+=== VERTICAL THRUST DEBUG ===
+
+DEBUG: Total Required Thrust: 82623N
+DEBUG: Number of Thrusters: 2
+DEBUG: Thrust per Thruster (raw): 41312N
+
+Thruster: Thruster Right
+Max Thrust: 230000N
+Applied Thrust: 41312N
+
+Thruster: Thruster Left
+Max Thrust: 230000N
+Applied Thrust: 41312N
+
+Vertical Distance: 8.57m
+Vertical Velocity: -0.04m/s
+Gravity: 9.81m/s²
+Required Accel: 9.81m/s²
+Ship Mass: 8422kg
+Total Thrust: 82623N
+Thrust per Thruster: 41300N (2 thrusters)

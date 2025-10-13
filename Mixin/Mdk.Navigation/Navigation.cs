@@ -21,16 +21,53 @@ namespace IngameScript
         }
         #endregion
 
+        public class NavigationSection : Section
+        {
+            private Navigation _navigation;
+            public BoolProperty FactorGravity { get; } = new BoolProperty("FactorGravity", FACTOR_GRAVITY_DEFAULT);
+            public DoubleProperty Accel { get; } = new DoubleProperty("Accel", ACCEL_DEFAULT);
+            public DoubleProperty Precision { get; } = new DoubleProperty("Precision", PRECISION_DEFAULT);
+            public DoubleProperty KP { get; } = new DoubleProperty("KP", KP_DEFAULT);
+            public DoubleProperty KI { get; } = new DoubleProperty("KI", KI_DEFAULT);
+            public DoubleProperty KD { get; } = new DoubleProperty("KD", KD_DEFAULT);
+            
+            public NavigationSection(Navigation navigation) : base("Navigation")
+            {
+                _navigation = navigation;
+                _properties.Add(FactorGravity);
+                _properties.Add(Accel);
+                _properties.Add(Precision);
+                _properties.Add(KP);
+                _properties.Add(KI);
+                _properties.Add(KD);
+                KP.ValueChanged += (value) => {
+                    _navigation.PidX.Kp = value;
+                    _navigation.PidY.Kp = value;
+                    _navigation.PidZ.Kp = value;
+                };
+                KI.ValueChanged += (value) => {
+                    _navigation.PidX.Ki = value;
+                    _navigation.PidY.Ki = value;
+                    _navigation.PidZ.Ki = value;
+                };
+                KD.ValueChanged += (value) => {
+                    _navigation.PidX.Kd = value;
+                    _navigation.PidY.Kd = value;
+                    _navigation.PidZ.Kd = value;
+                };
+            }
+        }
+
 
         #region Fields
         private const double PID_TIME_STEP_DEFAULT = 1.0 / 6.0;
 
         // Default Position PID settings
-        private const double KP_POS_DEFAULT = 3.0;
-        private const double KI_POS_DEFAULT = 1.0;
-        private const double KD_POS_DEFAULT = 0.0;
+        private const double KP_DEFAULT = 3.0;
+        private const double KI_DEFAULT = 1.0;
+        private const double KD_DEFAULT = 0.0;
         private const bool FACTOR_GRAVITY_DEFAULT = true;
-        private const double BRAKING_DISTANCE_FACTOR_DEFAULT = 3.0;
+        private const double ACCEL_DEFAULT = 0.25;
         private const double PRECISION_DEFAULT = 0.1;
 
 
@@ -39,24 +76,23 @@ namespace IngameScript
 
         private Program _program;
         private IMyRemoteControl _remoteControl;
+        private CustomDataConnector _customDataConnector;
+        private NavigationSection _section;
         #endregion
 
         #region Properties
-        public bool FactorGravity { get; set; } = FACTOR_GRAVITY_DEFAULT;
-        public double BrakingDistanceFactor { get; set; } = BRAKING_DISTANCE_FACTOR_DEFAULT;
-        public double Precision { get; set; } = PRECISION_DEFAULT;
-
         // Position PID controllers
-        public PID PidXPos { get; } = new PID(KP_POS_DEFAULT, KI_POS_DEFAULT, KD_POS_DEFAULT, PID_TIME_STEP_DEFAULT);
-        public PID PidYPos { get; } = new PID(KP_POS_DEFAULT, KI_POS_DEFAULT, KD_POS_DEFAULT, PID_TIME_STEP_DEFAULT);
-        public PID PidZPos { get; } = new PID(KP_POS_DEFAULT, KI_POS_DEFAULT, KD_POS_DEFAULT, PID_TIME_STEP_DEFAULT);
+        public PID PidX { get; } = new PID(KP_DEFAULT, KI_DEFAULT, KD_DEFAULT, PID_TIME_STEP_DEFAULT);
+        public PID PidY { get; } = new PID(KP_DEFAULT, KI_DEFAULT, KD_DEFAULT, PID_TIME_STEP_DEFAULT);
+        public PID PidZ { get; } = new PID(KP_DEFAULT, KI_DEFAULT, KD_DEFAULT, PID_TIME_STEP_DEFAULT);
 
         #endregion
 
         #region Methods
-        public bool Initialize(Program program, out string errorMessage)
+        public bool Initialize(Program program, CustomDataConnector customDataConnector, out string errorMessage)
         {
             _program = program;
+            _customDataConnector = customDataConnector;
             // Initialize remote control
             _remoteControl = _program.GetLocalBlock<IMyRemoteControl>();
             if (_remoteControl == null)
@@ -64,6 +100,9 @@ namespace IngameScript
                 errorMessage = "Navigation: No remote control found!";
                 return false;
             }
+
+            _section = new NavigationSection(this);
+            _customDataConnector.AddSection(_section);
 
             return InitializeThrusters(out errorMessage);
         }
@@ -178,17 +217,6 @@ namespace IngameScript
                 return false;
             }
 
-            // Log which thruster directions are available (for debugging)
-            var availableDirections = new List<string>();
-            if (_thrusters[ThrusterDir.Forward].Count > 0) availableDirections.Add($"Forward({_thrusters[ThrusterDir.Forward].Count})");
-            if (_thrusters[ThrusterDir.Backward].Count > 0) availableDirections.Add($"Backward({_thrusters[ThrusterDir.Backward].Count})");
-            if (_thrusters[ThrusterDir.Up].Count > 0) availableDirections.Add($"Up({_thrusters[ThrusterDir.Up].Count})");
-            if (_thrusters[ThrusterDir.Down].Count > 0) availableDirections.Add($"Down({_thrusters[ThrusterDir.Down].Count})");
-            if (_thrusters[ThrusterDir.Right].Count > 0) availableDirections.Add($"Right({_thrusters[ThrusterDir.Right].Count})");
-            if (_thrusters[ThrusterDir.Left].Count > 0) availableDirections.Add($"Left({_thrusters[ThrusterDir.Left].Count})");
-            
-            _program.Echo($"Navigation: Available thruster directions: {string.Join(", ", availableDirections)}");
-
             return true;
         }
 
@@ -209,9 +237,9 @@ namespace IngameScript
             {
                 SetThrusterGroupPower(key, 0);
             }
-            PidXPos.Reset();
-            PidYPos.Reset();
-            PidZPos.Reset();
+            PidX.Reset();
+            PidY.Reset();
+            PidZ.Reset();
         }
 
         public Vector3D GetCurrentPosition()
@@ -219,8 +247,9 @@ namespace IngameScript
             return _remoteControl.GetPosition();
         }
 
-        public bool NavigateTo(Vector3D target, double maxSpeed = 20.0)
+        public bool NavigateTo(Vector3D target, double maxSpeed = 20.0, double precision = 0)
         {
+            precision = precision == 0 ? _section.Precision.Value : precision;
             var pos = _remoteControl.GetPosition();
             var vel = _remoteControl.GetShipVelocities().LinearVelocity;
             var gravity = _remoteControl.GetNaturalGravity();
@@ -230,38 +259,26 @@ namespace IngameScript
             var distance = toTarget.Length();
 
             // --- Arrival check ---
-            if (distance < Precision && vel.Length() < Precision)
+            if (distance < precision && vel.Length() < precision)
             {
-                _program.Echo($"Distance: {distance}, Precision: {Precision}");
                 Stop();
                 return true;
             }
 
             // --- Step 1: Calculate desired velocity ---
-            // Some adjustments for faster approach when close to target
-            var actualMinSpeed = Precision;
-            if (distance < Precision * 2)
-            {
-                actualMinSpeed = Math.Max(Precision / 2, distance / 2);
-            }
-            else if (distance < Precision * 10)
-            {
-                actualMinSpeed = Precision * 5;
-            }
-
-            var desiredSpeed = Math.Min(maxSpeed, Math.Max(actualMinSpeed, distance / BrakingDistanceFactor));
+            var desiredSpeed = CalculateDesiredSpeedAtPosition(target, maxSpeed);
             var desiredVel = Vector3D.Normalize(toTarget) * desiredSpeed;
             var velError = desiredVel - vel;
 
             // --- Step 2: Use PID controllers for velocity control ---
-            var accelX = PidXPos.Control(velError.X);
-            var accelY = PidYPos.Control(velError.Y);
-            var accelZ = PidZPos.Control(velError.Z);
+            var accelX = PidX.Control(velError.X);
+            var accelY = PidY.Control(velError.Y);
+            var accelZ = PidZ.Control(velError.Z);
 
             var desiredAccel = new Vector3D(accelX, accelY, accelZ);
 
             // --- Step 3: Compensate gravity ---
-            if (FactorGravity)
+            if (_section.FactorGravity.Value)
             {
                 desiredAccel -= gravity;
             }
@@ -291,15 +308,6 @@ namespace IngameScript
             var upN = Math.Max(0, Vector3D.Dot(desiredForce, wm.Up));
             var downN = Math.Max(0, -Vector3D.Dot(desiredForce, wm.Up));
 
-            // Check if down thrusters are missing and compensate with up thrust
-            if (downN > 0 && (!_thrusters.ContainsKey(ThrusterDir.Down) || _thrusters[ThrusterDir.Down].Count == 0))
-            {
-                // No down thrusters available, reduce up thrust to compensate
-                upN = Math.Max(10000, upN - downN);
-                downN = 0; // Can't provide down thrust
-                _program.Echo($"Navigation: No down thrusters, compensating with up thrust reduction");
-            }
-
             SetThrusterOverride(ThrusterDir.Forward, forwardN);
             SetThrusterOverride(ThrusterDir.Backward, backwardN);
             SetThrusterOverride(ThrusterDir.Left, leftN);
@@ -324,7 +332,17 @@ namespace IngameScript
             }
         }
 
-
+        private double CalculateDesiredSpeedAtPosition(Vector3D target, double maxSpeed)
+        {
+            var currentPos = _remoteControl.GetPosition();
+            var distance = Vector3D.Distance(currentPos, target);
+            var breakingDistance = maxSpeed / _section.Accel.Value;
+            if (distance > breakingDistance)
+            {
+                return maxSpeed;
+            }
+            return distance / breakingDistance * maxSpeed;
+        }
         #endregion
     }
 }

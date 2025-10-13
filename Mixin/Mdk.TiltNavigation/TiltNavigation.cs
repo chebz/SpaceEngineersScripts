@@ -106,12 +106,10 @@ namespace IngameScript
             {
                 targetPitch = 0.0;
                 targetRoll = 0.0;
-                
-                _program.Echo($"No velocity error - keeping current orientation");
             }
-        
+            _program.Echo($"Yaw: {yaw:F2}, Pitch: {targetPitch:F2}, Roll: {targetRoll:F2}");
             // Convert clamped YPR back to matrix
-            var clampedMatrix = _alignment.YawPitchRollToWorldMatrix(0, targetPitch, targetRoll);
+            var clampedMatrix = _alignment.YawPitchRollToWorldMatrix(-yaw, targetPitch, targetRoll);
             
             // Align the drone with clamped matrix
             _alignment.AlignWithWorldMatrix(clampedMatrix);
