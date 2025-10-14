@@ -27,7 +27,7 @@ namespace IngameScript
 
         public Program()
         {
-            Runtime.UpdateFrequency = UpdateFrequency.Update10;
+            Runtime.UpdateFrequency = UpdateFrequency.Update1;
 
             _autoDockStation = new AutoDockStation();
 
@@ -97,6 +97,7 @@ namespace IngameScript
             Echo($"Total Connectors: {connectors.Count}");
             Echo($"Available: {connectors.Count(c => c.Status == AutoDockStation.ConnectorStatus.Available)}");
             Echo($"Reserved: {connectors.Count(c => c.Status == AutoDockStation.ConnectorStatus.Reserved)}");
+            Echo($"Docking: {connectors.Count(c => c.Status == AutoDockStation.ConnectorStatus.Docking)}");
             Echo($"Occupied: {connectors.Count(c => c.Status == AutoDockStation.ConnectorStatus.Occupied)}");
 
             foreach (var connector in connectors)
@@ -117,6 +118,7 @@ namespace IngameScript
             sb.AppendLine($"Total Docking Ports: {connectors.Count}");
             sb.AppendLine($"Available: {connectors.Count(c => c.Status == AutoDockStation.ConnectorStatus.Available)}");
             sb.AppendLine($"Reserved: {connectors.Count(c => c.Status == AutoDockStation.ConnectorStatus.Reserved)}");
+            sb.AppendLine($"Docking: {connectors.Count(c => c.Status == AutoDockStation.ConnectorStatus.Docking)}");
             sb.AppendLine($"Occupied: {connectors.Count(c => c.Status == AutoDockStation.ConnectorStatus.Occupied)}");
             sb.AppendLine();
             sb.AppendLine("=== DOCKING STATUS ===");

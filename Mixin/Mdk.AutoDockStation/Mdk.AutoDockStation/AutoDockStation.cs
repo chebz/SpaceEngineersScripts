@@ -10,13 +10,14 @@ namespace IngameScript
     {
         #region Constants
         private const string BROADCAST_TAG = "AutoDock";
-        private const double UPDATE_INTERVAL_DEFAULT = 10.0;
+        private const double UPDATE_INTERVAL_DEFAULT = 5.0;
         private const double APPROACH_DISTANCE_DEFAULT = 10.0;
         #endregion
         
         #region Fields
         private bool _initialized = false;
         private Program _program;
+        private IMyRemoteControl _remoteControl;
         private List<ConnectorInfo> _connectors = new List<ConnectorInfo>();
         private Dictionary<long, DateTime> _reservationStatusChecks;
         private IMyBroadcastListener _broadcastListener;
@@ -45,6 +46,13 @@ namespace IngameScript
         {
             _program = program;
             errorMessage = string.Empty;
+            
+            _remoteControl = _program.GetLocalBlock<IMyRemoteControl>();
+            if (_remoteControl == null)
+            {
+                errorMessage = "AutoDockStation: No remote control found!";
+                return false;
+            }
             
             _reservationStatusChecks = new Dictionary<long, DateTime>();
             _lastUpdate = DateTime.MinValue;
@@ -100,11 +108,11 @@ namespace IngameScript
         {
             if (!_initialized)
             {
-                _program.Echo("Error: AutoDockStation not initialized");
                 return;
             }
 
             HandleMessages();
+            SendPositionUpdates();
 
             if ((DateTime.Now - _lastUpdate).TotalSeconds >= UpdateInterval)
             {
@@ -128,7 +136,7 @@ namespace IngameScript
                     {
                         var parts = data.Split('|');
                         var droneName = parts.Length > 1 ? parts[1] : "Unknown";
-                        HandleDockingRequest(message.Source, droneName, true);
+                        HandleDockingRequest(message.Source, droneName);
                     }
                 }
             }
@@ -143,7 +151,7 @@ namespace IngameScript
                     {
                         var parts = data.Split('|');
                         var droneName = parts.Length > 1 ? parts[1] : "Unknown";
-                        HandleDockingRequest(message.Source, droneName, false);
+                        HandleDockingRequest(message.Source, droneName);
                     }
                     else if (data == "requestdockcoord")
                     {
@@ -157,18 +165,31 @@ namespace IngameScript
             }
         }
 
-        private void HandleDockingRequest(long shipId, string droneName, bool isBroadcast)
+        private void HandleDockingRequest(long shipId, string droneName)
         {
             for (int i = 0; i < _connectors.Count; i++)
             {
                 if (_connectors[i].ReservedShipId == shipId)
                 {
                     var connectorInfo = _connectors[i];
+                    
+                    // If ship is re-requesting while in Docking state, it means it's outside the approach cone
+                    // Transition back to Reserved
+                    if (connectorInfo.Status == ConnectorStatus.Docking)
+                    {
+                        connectorInfo.Status = ConnectorStatus.Reserved;
+                        connectorInfo.ReservationTime = DateTime.Now;
+                        _connectors[i] = connectorInfo;
+                        _program.Echo($"Ship {shipId} re-requested docking, transitioning from Docking to Reserved");
+                    }
+                    
                     var connectorPosition = connectorInfo.Connector.GetPosition();
                     var connectorForward = connectorInfo.Connector.WorldMatrix.Forward;
                     var approachPosition = connectorPosition + (connectorForward * ApproachDistance);
+                    var stationVelocity = _remoteControl.GetShipVelocities().LinearVelocity;
 
-                    var response = $"approachpos|{approachPosition.X:F2}|{approachPosition.Y:F2}|{approachPosition.Z:F2}";
+                    var response = $"approachpos|{approachPosition.X:F2}|{approachPosition.Y:F2}|{approachPosition.Z:F2}|" +
+                                  $"{stationVelocity.X:F2}|{stationVelocity.Y:F2}|{stationVelocity.Z:F2}";
                     _program.IGC.SendUnicastMessage(shipId, BROADCAST_TAG, response);
                     
                     return;
@@ -198,8 +219,10 @@ namespace IngameScript
                 var connectorPosition = connectorInfo.Connector.GetPosition();
                 var connectorForward = connectorInfo.Connector.WorldMatrix.Forward;
                 var approachPosition = connectorPosition + (connectorForward * ApproachDistance);
+                var stationVelocity = _remoteControl.GetShipVelocities().LinearVelocity;
 
-                var response = $"approachpos|{approachPosition.X:F2}|{approachPosition.Y:F2}|{approachPosition.Z:F2}";
+                var response = $"approachpos|{approachPosition.X:F2}|{approachPosition.Y:F2}|{approachPosition.Z:F2}|" +
+                              $"{stationVelocity.X:F2}|{stationVelocity.Y:F2}|{stationVelocity.Z:F2}";
                 _program.IGC.SendUnicastMessage(shipId, BROADCAST_TAG, response);
                 
                 return;
@@ -210,28 +233,67 @@ namespace IngameScript
 
         private void HandleDockCoordRequest(long shipId)
         {
-            var reservedConnector = _connectors.FirstOrDefault(c => c.ReservedShipId == shipId);
-            if (reservedConnector.Connector != null)
+            for (int i = 0; i < _connectors.Count; i++)
             {
-                var matrix = reservedConnector.Connector.WorldMatrix;
-                var response = $"dockcoord|{matrix.M11}|{matrix.M12}|{matrix.M13}|{matrix.M14}|" +
-                              $"{matrix.M21}|{matrix.M22}|{matrix.M23}|{matrix.M24}|" +
-                              $"{matrix.M31}|{matrix.M32}|{matrix.M33}|{matrix.M34}|" +
-                              $"{matrix.M41}|{matrix.M42}|{matrix.M43}|{matrix.M44}";
-                _program.IGC.SendUnicastMessage(shipId, BROADCAST_TAG, response);
+                if (_connectors[i].ReservedShipId == shipId && _connectors[i].Status == ConnectorStatus.Reserved)
+                {
+                    var connectorInfo = _connectors[i];
+                    connectorInfo.Status = ConnectorStatus.Docking;
+                    _connectors[i] = connectorInfo;
+                    
+                    var matrix = connectorInfo.Connector.WorldMatrix;
+                    var stationVelocity = _remoteControl.GetShipVelocities().LinearVelocity;
+                    var response = $"dockcoord|{matrix.M11}|{matrix.M12}|{matrix.M13}|{matrix.M14}|" +
+                                  $"{matrix.M21}|{matrix.M22}|{matrix.M23}|{matrix.M24}|" +
+                                  $"{matrix.M31}|{matrix.M32}|{matrix.M33}|{matrix.M34}|" +
+                                  $"{matrix.M41}|{matrix.M42}|{matrix.M43}|{matrix.M44}|" +
+                                  $"{stationVelocity.X:F2}|{stationVelocity.Y:F2}|{stationVelocity.Z:F2}";
+                    _program.IGC.SendUnicastMessage(shipId, BROADCAST_TAG, response);
+                    return;
+                }
             }
-            else
-            {
-                _program.IGC.SendUnicastMessage(shipId, BROADCAST_TAG, "denied");
-            }
+            
+            _program.IGC.SendUnicastMessage(shipId, BROADCAST_TAG, "denied");
+            _program.Echo("Docking denied, re-requesting approach...");
         }
-
 
         private void HandleOnMyWayResponse(long shipId)
         {
             if (_reservationStatusChecks.ContainsKey(shipId))
             {
-                _reservationStatusChecks[shipId] = DateTime.Now;
+                _reservationStatusChecks.Remove(shipId);
+            }
+        }
+
+        private void SendPositionUpdates()
+        {
+            var stationVelocity = _remoteControl.GetShipVelocities().LinearVelocity;
+            
+            foreach (var connectorInfo in _connectors)
+            {
+                if (connectorInfo.ReservedShipId == 0)
+                    continue;
+
+                if (connectorInfo.Status == ConnectorStatus.Reserved)
+                {
+                    var connectorPosition = connectorInfo.Connector.GetPosition();
+                    var connectorForward = connectorInfo.Connector.WorldMatrix.Forward;
+                    var approachPosition = connectorPosition + (connectorForward * ApproachDistance);
+                    
+                    var message = $"approachupdate|{approachPosition.X:F2}|{approachPosition.Y:F2}|{approachPosition.Z:F2}|" +
+                                 $"{stationVelocity.X:F2}|{stationVelocity.Y:F2}|{stationVelocity.Z:F2}";
+                    _program.IGC.SendUnicastMessage(connectorInfo.ReservedShipId, BROADCAST_TAG, message);
+                }
+                else if (connectorInfo.Status == ConnectorStatus.Docking)
+                {
+                    var matrix = connectorInfo.Connector.WorldMatrix;
+                    var message = $"dockingupdate|{matrix.M11}|{matrix.M12}|{matrix.M13}|{matrix.M14}|" +
+                                 $"{matrix.M21}|{matrix.M22}|{matrix.M23}|{matrix.M24}|" +
+                                 $"{matrix.M31}|{matrix.M32}|{matrix.M33}|{matrix.M34}|" +
+                                 $"{matrix.M41}|{matrix.M42}|{matrix.M43}|{matrix.M44}|" +
+                                 $"{stationVelocity.X:F2}|{stationVelocity.Y:F2}|{stationVelocity.Z:F2}";
+                    _program.IGC.SendUnicastMessage(connectorInfo.ReservedShipId, BROADCAST_TAG, message);
+                }
             }
         }
 
@@ -262,7 +324,8 @@ namespace IngameScript
             
             foreach (var connectorInfo in _connectors)
             {
-                if (connectorInfo.Status == ConnectorStatus.Reserved && connectorInfo.ReservedShipId != 0)
+                if ((connectorInfo.Status == ConnectorStatus.Reserved || connectorInfo.Status == ConnectorStatus.Docking) 
+                    && connectorInfo.ReservedShipId != 0)
                 {
                     shipsToCheck.Add(connectorInfo.ReservedShipId);
                 }
@@ -275,6 +338,7 @@ namespace IngameScript
                     var timeSinceResponse = (DateTime.Now - _reservationStatusChecks[shipId]).TotalSeconds;
                     if (timeSinceResponse >= UpdateInterval)
                     {
+                        _remoteControl.Log($"AutoDockStation: Release reservation for ship {shipId} due to timeout");
                         ReleaseReservation(shipId);
                         _reservationStatusChecks.Remove(shipId);
                     }
@@ -291,18 +355,21 @@ namespace IngameScript
         {
             for (int i = 0; i < _connectors.Count; i++)
             {
-                if (_connectors[i].ReservedShipId == shipId && _connectors[i].Status == ConnectorStatus.Reserved)
+                if (_connectors[i].ReservedShipId == shipId)
                 {
-                    if (_connectors[i].Connector.IsConnected)
+                    if (_connectors[i].Status == ConnectorStatus.Occupied || _connectors[i].Connector.IsConnected)
                     {
                         continue;
                     }
 
-                    var connectorInfo = _connectors[i];
-                    connectorInfo.Status = ConnectorStatus.Available;
-                    connectorInfo.ReservedShipId = 0;
-                    connectorInfo.ReservedShipName = string.Empty;
-                    _connectors[i] = connectorInfo;
+                    if (_connectors[i].Status == ConnectorStatus.Reserved || _connectors[i].Status == ConnectorStatus.Docking)
+                    {
+                        var connectorInfo = _connectors[i];
+                        connectorInfo.Status = ConnectorStatus.Available;
+                        connectorInfo.ReservedShipId = 0;
+                        connectorInfo.ReservedShipName = string.Empty;
+                        _connectors[i] = connectorInfo;
+                    }
                 }
             }
         }
@@ -330,6 +397,9 @@ namespace IngameScript
                         break;
                     case ConnectorStatus.Reserved:
                         allLines.Add($"{connectorName} - Reserved ({connector.ReservedShipName})");
+                        break;
+                    case ConnectorStatus.Docking:
+                        allLines.Add($"{connectorName} - Docking ({connector.ReservedShipName})");
                         break;
                     case ConnectorStatus.Occupied:
                         var otherConnector = connector.Connector.OtherConnector;
@@ -409,6 +479,7 @@ namespace IngameScript
         {
             Available,
             Reserved,
+            Docking,
             Occupied
         }
 

@@ -242,12 +242,28 @@ namespace IngameScript
             PidZ.Reset();
         }
 
+        public void PowerOff()
+        {
+            foreach (var thruster in _thrusters.Values.SelectMany(list => list))
+            {
+                thruster.Enabled = false;
+            }
+        }
+
+        public void PowerOn()
+        {
+            foreach (var thruster in _thrusters.Values.SelectMany(list => list))
+            {
+                thruster.Enabled = true;
+            }
+        }
+
         public Vector3D GetCurrentPosition()
         {
             return _remoteControl.GetPosition();
         }
 
-        public bool NavigateTo(Vector3D target, double maxSpeed = 20.0, double precision = 0)
+        public bool NavigateTo(Vector3D target, double maxSpeed = 20.0, double precision = 0, Vector3D targetSpeed = default(Vector3D))
         {
             precision = precision == 0 ? _section.Precision.Value : precision;
             var pos = _remoteControl.GetPosition();
@@ -259,7 +275,8 @@ namespace IngameScript
             var distance = toTarget.Length();
 
             // --- Arrival check ---
-            if (distance < precision && vel.Length() < precision)
+            var velDifference = vel - targetSpeed;
+            if (distance < precision && velDifference.Length() < precision)
             {
                 Stop();
                 return true;
@@ -267,7 +284,7 @@ namespace IngameScript
 
             // --- Step 1: Calculate desired velocity ---
             var desiredSpeed = CalculateDesiredSpeedAtPosition(target, maxSpeed);
-            var desiredVel = Vector3D.Normalize(toTarget) * desiredSpeed;
+            var desiredVel = Vector3D.Normalize(toTarget) * desiredSpeed + targetSpeed;
             var velError = desiredVel - vel;
 
             // --- Step 2: Use PID controllers for velocity control ---

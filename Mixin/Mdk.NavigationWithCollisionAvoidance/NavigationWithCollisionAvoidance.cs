@@ -53,6 +53,7 @@ namespace IngameScript
         private bool _isDetour = false;
         private double _maxSpeed;
         private double _precision;
+        private Vector3D _targetSpeed;
         private NavigationState _navigationState;
         #endregion
 
@@ -94,7 +95,7 @@ namespace IngameScript
             return true;
         }
 
-        public void NavigateTo(Vector3D target, double maxSpeed = 20.0, double precision = 0)
+        public void NavigateTo(Vector3D target, double maxSpeed = 20.0, double precision = 0, Vector3D targetSpeed = default(Vector3D))
         {
             if (!IsInitialized)
             {
@@ -102,31 +103,30 @@ namespace IngameScript
                 return;
             }
 
-            if (!(CurrentState is IdleState))
-            {
-                Stop();
-            }
-
-            _target = target;
             _maxSpeed = maxSpeed;
             _precision = precision;
-            _isDetour = false;
-            _navigationState = NavigationState.Navigating;
-            _camera.EnableRaycast = true;
-            
-            var distance = Vector3D.Distance(_remoteControl.GetPosition(), target);
-            if (distance <= _section.SimpleNavigationDistance.Value)
+            _targetSpeed = targetSpeed;
+            if (_navigationState == NavigationState.Stuck || _navigationState == NavigationState.Idle)
             {
-                TransitionTo(new SimpleNavigatingState(this, target));
+                _isDetour = false;
+                _navigationState = NavigationState.Navigating;
+                _camera.EnableRaycast = true;
+                var distance = Vector3D.Distance(_remoteControl.GetPosition(), target);
+                if (distance <= _section.SimpleNavigationDistance.Value)
+                {
+                    TransitionTo(new SimpleNavigatingState(this, target));
+                }
+                else
+                {
+                    TransitionTo(new NavigatingState(this, target));
+                }
             }
-            else
-            {
-                TransitionTo(new AligningState(this, target));
-            }
+            _target = target;            
         }
 
         public void Stop()
         {
+            _remoteControl.Log("CA: Stop");
             if (!IsInitialized)
                 return;
 
@@ -225,38 +225,12 @@ namespace IngameScript
             public IdleState(NavigationWithCollisionAvoidance context) : base(context) 
             { 
                 _context._camera.EnableRaycast = false;
-                _context._program.Echo("IdleState");
+                _context._remoteControl.Log("CA: IdleState");
                 _context._alignment.Stop();
                 _context._navigation.Stop();
             }
         }
 
-        private class AligningState : State<NavigationWithCollisionAvoidance>
-        {
-            private Vector3D _targetPosition;
-
-            public AligningState(NavigationWithCollisionAvoidance context, Vector3D targetPosition) : base(context)
-            {
-                _context._program.Echo("Aligning");
-                _targetPosition = targetPosition;
-            }
-
-            public override void Execute()
-            {
-                if (_context._alignment.AlignWithTarget(_targetPosition))
-                {
-                    var distance = Vector3D.Distance(_context._remoteControl.GetPosition(), _targetPosition);
-                    if (distance <= _context._section.SimpleNavigationDistance.Value)
-                    {
-                        _context.TransitionTo(new SimpleNavigatingState(_context, _targetPosition));
-                    }
-                    else
-                    {
-                        _context.TransitionTo(new NavigatingState(_context, _targetPosition));
-                    }
-                }
-            }
-        }
 
         private class ScanningState : State<NavigationWithCollisionAvoidance>
         {
@@ -265,7 +239,7 @@ namespace IngameScript
 
             public ScanningState(NavigationWithCollisionAvoidance context, Vector3D targetPosition) : base(context) 
             { 
-                _context._program.Echo("Scanning");
+                _context._remoteControl.Log("CA: Scanning");
                 _targetPosition = targetPosition; 
             }
 
@@ -428,12 +402,19 @@ namespace IngameScript
 
             public NavigatingState(NavigationWithCollisionAvoidance context, Vector3D targetPosition) : base(context)
             {
-                _context._program.Echo("Navigating");
+                _context._remoteControl.Log("CA: Navigating");
                 _targetPosition = targetPosition;
+            }
+
+            public void UpdateTarget(Vector3D newTarget)
+            {
+                _targetPosition = newTarget;
             }
 
             public override void Execute()
             {
+                _context._alignment.AlignWithTarget(_targetPosition);
+
                 var tr = _context._fwdTopRightSensor.IsActive;
                 var tl = _context._fwdTopLeftSensor.IsActive;
                 var br = _context._fwdBottomRightSensor.IsActive;
@@ -441,31 +422,27 @@ namespace IngameScript
                 var anyActive = tr || tl || br || bl;
                 if (anyActive)
                 {
-                    // Obstacle detected - stop navigation and transition to scanning
                     _context._navigation.Stop();
                     _context.TransitionTo(new ScanningState(_context, _targetPosition));
                     return;
                 }
 
-                // limit max speed based on distance to target
                 var distance = Vector3D.Distance(_context._remoteControl.GetPosition(), _targetPosition);
                 var maxSpeed = Math.Max(_context._section.MinSpeed.Value, Math.Min(_context._maxSpeed, distance / 10.0));
 
                 var raycastDistance = maxSpeed * 4.0;
                 
-                // Get ship orientation and bounds
                 var bounds = _context._remoteControl.CubeGrid.WorldVolume.Radius;
 
                 double closestDistance;
                 if (CheckObstaclesWithRaycast(raycastDistance, bounds, out closestDistance))
                 {
-                    // Obstacle detected - slow down
                     maxSpeed = Math.Max(_context._section.MinSpeed.Value, Math.Min(maxSpeed, closestDistance / 5.0));
                 }
 
-                // Clear path - continue navigation at full speed
                 var precision = _context._isDetour ? _context._section.DetourPrecision.Value : _context._precision;
-                if (_context._navigation.NavigateTo(_targetPosition, maxSpeed, precision))
+                var targetSpeed = _context._isDetour ? Vector3D.Zero : _context._targetSpeed;
+                if (_context._navigation.NavigateTo(_targetPosition, maxSpeed, precision, targetSpeed))
                 {
                     if (_context._isDetour)
                     {
@@ -477,7 +454,7 @@ namespace IngameScript
                         }
                         else
                         {
-                            _context.TransitionTo(new AligningState(_context, _context._target));
+                            _targetPosition = _context._target;
                         }
                     }
                     else
@@ -548,14 +525,20 @@ namespace IngameScript
 
             public SimpleNavigatingState(NavigationWithCollisionAvoidance context, Vector3D targetPosition) : base(context)
             {
-                _context._program.Echo("Simple Navigating (no collision avoidance)");
+                _context._remoteControl.Log("CA: Simple Navigating");
                 _targetPosition = targetPosition;
+            }
+
+            public void UpdateTarget(Vector3D newTarget)
+            {
+                _targetPosition = newTarget;
             }
 
             public override void Execute()
             {
                 var precision = _context._isDetour ? _context._section.DetourPrecision.Value : _context._precision;
-                if (_context._navigation.NavigateTo(_targetPosition, _context._maxSpeed, precision))
+                var targetSpeed = _context._isDetour ? Vector3D.Zero : _context._targetSpeed;
+                if (_context._navigation.NavigateTo(_targetPosition, _context._maxSpeed, precision, targetSpeed))
                 {
                     if (_context._isDetour)
                     {
@@ -563,11 +546,11 @@ namespace IngameScript
                         var distance = Vector3D.Distance(_context._remoteControl.GetPosition(), _context._target);
                         if (distance <= _context._section.SimpleNavigationDistance.Value)
                         {
-                            _context.TransitionTo(new SimpleNavigatingState(_context, _context._target));
+                            _targetPosition = _context._target;
                         }
                         else
                         {
-                            _context.TransitionTo(new AligningState(_context, _context._target));
+                            _context.TransitionTo(new NavigatingState(_context, _context._target));
                         }
                     }
                     else
