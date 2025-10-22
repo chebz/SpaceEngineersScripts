@@ -288,9 +288,13 @@ namespace IngameScript
             var velError = desiredVel - vel;
 
             // --- Step 2: Use PID controllers for velocity control ---
-            var accelX = PidX.Control(velError.X);
-            var accelY = PidY.Control(velError.Y);
-            var accelZ = PidZ.Control(velError.Z);
+            // var accelX = PidX.Control(velError.X);
+            // var accelY = PidY.Control(velError.Y);
+            // var accelZ = PidZ.Control(velError.Z);
+
+            var accelX = velError.X;
+            var accelY = velError.Y;
+            var accelZ = velError.Z;
 
             var desiredAccel = new Vector3D(accelX, accelY, accelZ);
 
@@ -353,12 +357,21 @@ namespace IngameScript
         {
             var currentPos = _remoteControl.GetPosition();
             var distance = Vector3D.Distance(currentPos, target);
-            var breakingDistance = maxSpeed / _section.Accel.Value;
+            
+            // Correct breaking distance formula: v²/(2a)
+            // This gives us the distance needed to stop from maxSpeed
+            var breakingDistance = (maxSpeed * maxSpeed) / (2.0 * _section.Accel.Value);
+            
             if (distance > breakingDistance)
             {
                 return maxSpeed;
             }
-            return distance / breakingDistance * maxSpeed;
+            
+            // When we're within breaking distance, scale down the speed
+            // Use a more gradual approach: sqrt(distance/breakingDistance) * maxSpeed
+            // This gives a smoother deceleration curve
+            var speedRatio = Math.Sqrt(distance / breakingDistance);
+            return speedRatio * maxSpeed;
         }
         #endregion
     }

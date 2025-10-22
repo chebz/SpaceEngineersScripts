@@ -121,6 +121,19 @@ namespace IngameScript
                     TransitionTo(new NavigatingState(this, target));
                 }
             }
+            else if (!_isDetour)
+            {
+                if (CurrentState is SimpleNavigatingState)
+                {
+                    var simpleNavigatingState = (SimpleNavigatingState)CurrentState;
+                    simpleNavigatingState.UpdateTarget(target);
+                }
+                else if (CurrentState is NavigatingState)
+                {
+                    var navigatingState = (NavigatingState)CurrentState;
+                    navigatingState.UpdateTarget(target);
+                }
+            }
             _target = target;            
         }
 

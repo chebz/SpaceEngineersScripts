@@ -2,190 +2,172 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "build-tiltflyer",
+            "label": "build-mp_base",
+            "type": "shell",
             "command": "dotnet",
-            "type": "process",
             "args": [
-                "build"
+                "build",
+                "Scripts/ModularPrinter/ModularPrinter.sln",
+                "--configuration",
+                "Debug"
             ],
-            "options": {
-                "cwd": "${workspaceFolder}/Scripts/TiltFlyer/TiltFlyer"
+            "group": {
+                "kind": "build",
+                "isDefault": false
             },
-            "problemMatcher": "$msCompile",
-            "group": "build",
             "presentation": {
                 "echo": true,
                 "reveal": "always",
                 "focus": false,
-                "panel": "shared",
-                "showReuseMessage": true,
-                "clear": false
-            }
-        },
-        {
-            "label": "build-osprey",
-            "command": "dotnet",
-            "type": "process",
-            "args": [
-                "build"
-            ],
-            "options": {
-                "cwd": "${workspaceFolder}/Scripts/Osprey/Osprey"
+                "panel": "shared"
             },
             "problemMatcher": "$msCompile",
-            "group": "build",
+            "detail": "Build the ModularPrinter base Space Engineers script"
+        },
+        {
+            "label": "build-mpp_1",
+            "type": "shell",
+            "command": "dotnet",
+            "args": [
+                "build",
+                "Scripts/ModularPrinterPart1/ModularPrinterPart1.sln",
+                "--configuration",
+                "Debug"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
             "presentation": {
                 "echo": true,
                 "reveal": "always",
                 "focus": false,
-                "panel": "shared",
-                "showReuseMessage": true,
-                "clear": false
-            }
-        },
-        {
-            "label": "build-claptrap",
-            "command": "dotnet",
-            "type": "process",
-            "args": [
-                "build"
-            ],
-            "options": {
-                "cwd": "${workspaceFolder}/Scripts/Claptrap/Claptrap"
+                "panel": "shared"
             },
             "problemMatcher": "$msCompile",
-            "group": "build",
+            "detail": "Build the ModularPrinterPart1 Space Engineers script"
+        },
+        {
+            "label": "build-mpp_2",
+            "type": "shell",
+            "command": "dotnet",
+            "args": [
+                "build",
+                "Scripts/ModularPrinterPart2/ModularPrinterPart2.sln",
+                "--configuration",
+                "Debug"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
             "presentation": {
                 "echo": true,
                 "reveal": "always",
                 "focus": false,
-                "panel": "shared",
-                "showReuseMessage": true,
-                "clear": false
-            }
-        },
-        {
-            "label": "build-sdc",
-            "command": "dotnet",
-            "type": "process",
-            "args": [
-                "build"
-            ],
-            "options": {
-                "cwd": "${workspaceFolder}/Scripts/SpinningDrillController/SpinningDrillController"
+                "panel": "shared"
             },
             "problemMatcher": "$msCompile",
-            "group": "build",
-            "presentation": {
-                "echo": true,
-                "reveal": "always",
-                "focus": false,
-                "panel": "shared",
-                "showReuseMessage": true,
-                "clear": false
-            }
+            "detail": "Build the ModularPrinterPart2 Space Engineers script"
         },
         {
-            "label": "build-testalignclient",
-            "command": "dotnet",
-            "type": "process",
-            "args": [
-                "build"
-            ],
-            "options": {
-                "cwd": "${workspaceFolder}/Scripts/TestAlignClient/TestAlignClient"
-            },
-            "problemMatcher": "$msCompile",
-            "group": "build",
-            "presentation": {
-                "echo": true,
-                "reveal": "always",
-                "focus": false,
-                "panel": "shared",
-                "showReuseMessage": true,
-                "clear": false
-            }
-        },
-        {
-            "label": "build-testaligntarget",
-            "command": "dotnet",
-            "type": "process",
-            "args": [
-                "build"
-            ],
-            "options": {
-                "cwd": "${workspaceFolder}/Scripts/TestAlignTarget/TestAlignTarget"
-            },
-            "problemMatcher": "$msCompile",
-            "group": "build",
-            "presentation": {
-                "echo": true,
-                "reveal": "always",
-                "focus": false,
-                "panel": "shared",
-                "showReuseMessage": true,
-                "clear": false
-            }
-        },
-        {
-            "label": "build-testalign",
+            "label": "build-mp_all",
+            "dependsOrder": "sequence",
             "dependsOn": [
-                "build-testalignclient",
-                "build-testaligntarget"
+                "build-mp_base",
+                "build-mpp_1",
+                "build-mpp_2"
             ],
-            "problemMatcher": [],
-            "group": "build"
-        },
-        {
-            "label": "build-autodockdrone",
-            "command": "dotnet",
-            "type": "process",
-            "args": [
-                "build"
-            ],
-            "options": {
-                "cwd": "${workspaceFolder}/Scripts/AutoDockDrone/AutoDockDrone"
+            "group": {
+                "kind": "build",
+                "isDefault": true
             },
-            "problemMatcher": "$msCompile",
-            "group": "build",
             "presentation": {
                 "echo": true,
                 "reveal": "always",
                 "focus": false,
-                "panel": "shared",
-                "showReuseMessage": true,
-                "clear": false
-            }
-        },
-        {
-            "label": "build-autodockstation",
-            "command": "dotnet",
-            "type": "process",
-            "args": [
-                "build"
-            ],
-            "options": {
-                "cwd": "${workspaceFolder}/Scripts/AutoDockStation/AutoDockStation"
+                "panel": "shared"
             },
             "problemMatcher": "$msCompile",
-            "group": "build",
+            "detail": "Build all ModularPrinter Space Engineers scripts"
+        },
+        {
+            "label": "copy-toolinfo",
+            "type": "shell",
+            "command": "${workspaceFolder}/copy-toolinfo.bat",
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
             "presentation": {
                 "echo": true,
                 "reveal": "always",
                 "focus": false,
-                "panel": "shared",
-                "showReuseMessage": true,
-                "clear": false
-            }
+                "panel": "shared"
+            },
+            "detail": "Copy ToolInfo mod to Space Engineers mods directory"
         },
         {
-            "label": "build-autodock",
-            "dependsOn": [
-                "build-autodockdrone",
-                "build-autodockstation"
+            "label": "build-test_tool",
+            "type": "shell",
+            "command": "dotnet",
+            "args": [
+                "build",
+                "Scripts/TestToolInfo/TestToolInfo.sln",
+                "--configuration",
+                "Debug"
             ],
-            "problemMatcher": [],
-            "group": "build"
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "problemMatcher": "$msCompile",
+            "detail": "Build the TestToolInfo Space Engineers script"
+        },
+        {
+            "label": "copy-pathfinder",
+            "type": "shell",
+            "command": "${workspaceFolder}/copy-pathfinder.bat",
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "detail": "Copy Pathfinder mod to Space Engineers mods directory"
+        },
+        {
+            "label": "build-test_pathfinding",
+            "type": "shell",
+            "command": "dotnet",
+            "args": [
+                "build",
+                "Scripts/TestPathfinding/TestPathfinding.sln",
+                "--configuration",
+                "Debug"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "problemMatcher": "$msCompile",
+            "detail": "Build the TestPathfinding Space Engineers script"
         }
     ]
 }

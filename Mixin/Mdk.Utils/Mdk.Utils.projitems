@@ -7,5 +7,6 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="$(MSBuildThisFileDirectory)Utils.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)PID.cs" />
   </ItemGroup>
 </Project>

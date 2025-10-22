@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Definitions xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+    <EntityComponents>
+
+        <EntityComponent xsi:type="MyComponentDefinitionBase">
+            <Id>
+                <TypeId>ObjectBuilderCanUseToolEvent</TypeId>
+                <Subtypeid>CanUseToolEvent</Subtypeid>
+            </Id>
+        </EntityComponent>
+
+        <EntityComponent xsi:type="MyObjectBuilder_ModStorageComponentDefinition">
+            <Id>
+                <TypeId>ModStorageComponent</TypeId>
+                <SubtypeId>ToolInfo</SubtypeId>
+            </Id>
+            <RegisteredStorageGuids>
+                <guid>88b6e84f-15c6-4df3-8d72-3177fa386d2f</guid>
+            </RegisteredStorageGuids>
+        </EntityComponent>
+
+    </EntityComponents>
+
+</Definitions>

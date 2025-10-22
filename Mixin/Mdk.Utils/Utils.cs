@@ -72,5 +72,10 @@ namespace IngameScript
             var timestamp = DateTime.Now.ToString("mm:ss.fff");
             remoteControl.CustomData = $"{remoteControl.CustomData}\n[{timestamp}] {message}";
         }
+
+        public static void ClearLog(this IMyRemoteControl remoteControl)
+        {
+            remoteControl.CustomData = string.Empty;
+        }
     }
 }

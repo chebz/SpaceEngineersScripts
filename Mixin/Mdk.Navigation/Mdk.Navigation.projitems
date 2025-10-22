@@ -8,6 +8,5 @@
   <ItemGroup>
     <Compile Include="$(MSBuildThisFileDirectory)Alignment.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Navigation.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)PID.cs" />
   </ItemGroup>
 </Project>
