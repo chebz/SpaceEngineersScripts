@@ -29,12 +29,6 @@ namespace Pathfinder
             // MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(navPathProperty);
             // MyAPIGateway.Utilities.ShowMessage("Pathfinder", $"NavPath property added: {navPathProperty.TypeName}");
 
-            var nextWaypointProperty = MyAPIGateway.TerminalControls.CreateProperty<Vector3D, IMyRemoteControl>("NextWaypoint");
-            nextWaypointProperty.Getter = (rcBlock) => GetNextWaypoint(rcBlock);
-            nextWaypointProperty.Enabled = (rcBlock) => true;
-            nextWaypointProperty.Visible = (rcBlock) => false;            
-            MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(nextWaypointProperty);
-
             var recomputePathAction = MyAPIGateway.TerminalControls.CreateAction<IMyRemoteControl>("RecomputePath");
             recomputePathAction.Action = (rcBlock) => RecomputePath(rcBlock);
             recomputePathAction.Enabled = (rcBlock) => true;
@@ -66,31 +60,5 @@ namespace Pathfinder
             navigationComponent.NeedsRecompute = true;
         }
 
-        private List<Vector3D> GetNavPath(IMyTerminalBlock rc)
-        {
-            var gameLogicComponent = rc.Components.Get<MyGameLogicComponent>();
-            if (gameLogicComponent == null)
-            {
-                MyAPIGateway.Utilities.ShowMessage("Pathfinder", $"GameLogicComponent not found");
-                return new List<Vector3D>();
-            }
-            var navigationComponent = gameLogicComponent.GetAs<NavigationComponent>();
-            if (navigationComponent == null)
-            {
-                MyAPIGateway.Utilities.ShowMessage("Pathfinder", $"NavigationComponent not found");
-                return new List<Vector3D>();
-            }
-            return navigationComponent.CurrentPath;
-        }
-
-        private Vector3D GetNextWaypoint(IMyTerminalBlock rc)
-        {
-            var path = GetNavPath(rc);
-            if (path.Count < 2)
-            {
-                return Vector3D.PositiveInfinity;
-            }
-            return path[1];
-        }
     }
 }
