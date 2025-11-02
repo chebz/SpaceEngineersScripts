@@ -163,7 +163,7 @@ namespace ToolInfo
             }
             if(_tool.Storage == null)
             {
-                _tool.Storage = new MyModStorageComponent();
+                _tool.Storage = new MyModStoragCeomponent();
             }
             try
             {

@@ -27,4 +27,5 @@
   <Import Project="..\..\..\Mixin\Mdk.Navigation\Mdk.Navigation.projitems" Label="Shared" />
   <Import Project="..\..\..\Mixin\Mdk.CustomDataConnector\Mdk.CustomDataConnector.projitems" Label="Shared" />
   <Import Project="..\..\..\Mixin\Mdk.StateMachine\Mdk.StateMachine.projitems" Label="Shared" />
+  <Import Project="..\..\..\Mixin\Mdk.PathfinderNavigation\Mdk.PathfinderNavigation.projitems" Label="Shared" />
 </Project>

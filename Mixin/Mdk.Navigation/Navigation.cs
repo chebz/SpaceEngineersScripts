@@ -76,7 +76,6 @@ namespace IngameScript
 
         private Program _program;
         private IMyRemoteControl _remoteControl;
-        private CustomDataConnector _customDataConnector;
         private NavigationSection _section;
         #endregion
 
@@ -92,7 +91,6 @@ namespace IngameScript
         public bool Initialize(Program program, CustomDataConnector customDataConnector, out string errorMessage)
         {
             _program = program;
-            _customDataConnector = customDataConnector;
             // Initialize remote control
             _remoteControl = _program.GetLocalBlock<IMyRemoteControl>();
             if (_remoteControl == null)
@@ -102,7 +100,7 @@ namespace IngameScript
             }
 
             _section = new NavigationSection(this);
-            _customDataConnector.AddSection(_section);
+            customDataConnector.AddSection(_section);
 
             return InitializeThrusters(out errorMessage);
         }

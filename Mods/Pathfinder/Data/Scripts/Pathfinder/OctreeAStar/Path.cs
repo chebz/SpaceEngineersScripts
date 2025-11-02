@@ -9,8 +9,7 @@ namespace Pathfinder.OctreeAStar
         {
             NotStarted,
             Calculating,
-            Full,
-            Partial,
+            Ready,
             NoPath
         }
         public State state = State.NotStarted;
@@ -18,22 +17,37 @@ namespace Pathfinder.OctreeAStar
 
         public void Render()
         {
-            for (int i = 0; i < points.Count - 1; i++)
+            for (var i = 0; i < points.Count - 1; i++)
             {
                 var start = points[i];
                 var end = points[i + 1];
-                Utils.DrawLine(
-                    start, 
-                    end, 
-                    Color.Green, 
-                    0.02f
-                );
+                Utils.DrawLine(start, end, Color.Cyan, 0.2f);
             }
 
             foreach (var point in points)
             {
                 Utils.DrawSphere(point, Color.Red, 0.5f, false);
             }
+        }
+
+        public override string ToString()
+        {
+            if (points == null || points.Count == 0 || state != State.Ready)
+            {
+                return string.Empty;
+            }
+
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < points.Count; i++)
+            {
+                var p = points[i];
+                if (i > 0)
+                {
+                    sb.Append(',');
+                }
+                sb.AppendFormat(System.Globalization.CultureInfo.InvariantCulture, "({0:F2},{1:F2},{2:F2})", p.X, p.Y, p.Z);
+            }
+            return sb.ToString();
         }
     }
 }

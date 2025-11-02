@@ -1,96 +1,918 @@
-using VRageMath;
-using VRage.Game.ModAPI;
+using System;
 using System.Collections.Generic;
+using System.Linq;
+using Sandbox.ModAPI;
+using VRage.Game.ModAPI;
+using VRageMath;
 
 namespace Pathfinder.OctreeAStar
 {
     public class Graph
     {
-        public const int MAX_NODES_PER_FRAME = 1;
-        private List<Octant> _open = new List<Octant>();
-        private List<Octant> _closed = new List<Octant>();
-        private double _rootSize;
-        private Vector3D _start;
-        private Vector3D _end;
-        private IMyCubeGrid _ownGrid;
-        private double _agentSize;
-        private Path _path;
-        private int _nodesProcessed;
+        #region Fields
+        public double maxRootSize = 2000;
+        public int maxNodesPerFrame = 1;
+        public double gFactor = 0.1;
+        public double exploreCostFactor = 0.75;
+        public int maxPathOptimizationSteps = 100;
+        private bool _isReverse;
+        private int _currentExplorationCount;
+        private readonly Random _random = new Random();
+        private double _minClosedGForward;
+        private double _minClosedGReverse;
+        private readonly List<PathCandidate> _candidateBuffer = new List<PathCandidate>();
+        private readonly List<Vector3D> _pathPointBuffer = new List<Vector3D>();
+        private readonly List<Vector3D> _collinearBuffer = new List<Vector3D>();
+        private readonly List<Vector3D> _offsetBuffer = new List<Vector3D>();
+        private readonly List<SegmentPair> _segmentBuffer = new List<SegmentPair>();
+        private readonly List<Octant> _octantBuffer = new List<Octant>();
 
-        public Vector3D Start => _start;
-        public Vector3D End => _end;
-        public IMyCubeGrid OwnGrid => _ownGrid;
-        public double AgentSize => _agentSize;
+        #region Debug
+        private int _exploreCount;
+        #endregion
+
+        private static readonly Vector3D[] StartOffsetDirections = new[]
+        {
+            Vector3D.Zero,
+            Vector3D.UnitX,
+            -Vector3D.UnitX,
+            Vector3D.UnitY,
+            -Vector3D.UnitY,
+            Vector3D.UnitZ,
+            -Vector3D.UnitZ
+        };
+
+        private const double StartOffsetFactor = 0.25;
+        private int _currentStartOffsetIndex;
+        private Vector3D _originalStart;
+        private Vector3D _currentStart;
+
+        private struct PathCandidate
+        {
+            public int Index;
+            public Octant Octant;
+
+            public PathCandidate(int index, Octant octant)
+            {
+                Index = index;
+                Octant = octant;
+            }
+        }
+
+        private struct SegmentPair
+        {
+            public Vector3D Start;
+            public Vector3D End;
+
+            public SegmentPair(Vector3D start, Vector3D end)
+            {
+                Start = start;
+                End = end;
+            }
+        }
+        #endregion
+
+        #region Properties
+        public Octant Root { get; private set; }
+
+        public Vector3D Start { get; private set; }
+
+        public Vector3D End { get; private set; }
+
+        public IMyCubeGrid OwnGrid { get; private set; }
+
+        public double AgentSize { get; private set; }
+
+        public Path Path { get; private set; }
+
+        public List<Octant> Open { get; } = new List<Octant>();
+
+        public List<Octant> OpenReverse { get; } = new List<Octant>();
+
+        public HashSet<Octant> Closed { get; } = new HashSet<Octant>();
+
+        public HashSet<Octant> ClosedReverse { get; } = new HashSet<Octant>();
+
+        public HashSet<Octant> MeetPoints { get; } = new HashSet<Octant>();
+
+        public int NodesProcessed { get; private set; }
+
+        public int StepCount { get; private set; }
+
+        public int ExploreCount { get; private set; }
+        #endregion
+
+        #region Methods
+        public void IncrementExploreCount()
+        {
+            ExploreCount++;
+        }
 
         public void BeginFindPath(IMyCubeGrid ownGrid, Vector3D start, Vector3D end)
         {
-            _ownGrid = ownGrid;
-            _agentSize = ownGrid.WorldVolume.Radius;
-            _start = start;
-            _end = end;
-            _path = new Path();
-            _rootSize = Vector3D.Distance(start, end);
-            _open.Clear();
-            _closed.Clear();
-            var center = (start + end) / 2;
-            var bb = new BoundingBoxD(
-                center - _rootSize, 
-                center + _rootSize);
-            var octant = new Octant(bb, this, null);
-            _open.Add(octant);
-            _path.state = Path.State.Calculating;
-            _nodesProcessed = 0;
+            OwnGrid = ownGrid;
+            AgentSize = ownGrid.WorldVolume.Radius * 2;
+            _originalStart = start;
+            Start = start;
+            End = end;
+            _currentStartOffsetIndex = 0;
+
+            var minimumDistance = AgentSize > 0 ? AgentSize * 2.0 : 0.0;
+            if (minimumDistance > 0.0 && Vector3D.Distance(start, end) < minimumDistance)
+            {
+                NodesProcessed = 0;
+                StepCount = 0;
+                ExploreCount = 0;
+                _currentExplorationCount = 0;
+                _isReverse = false;
+
+                Open.Clear();
+                OpenReverse.Clear();
+                Closed.Clear();
+                ClosedReverse.Clear();
+                MeetPoints.Clear();
+                Root = null;
+
+                Path = new Path
+                {
+                    state = Path.State.NoPath
+                };
+
+                MyAPIGateway.Utilities.ShowMessage("Pathfinder", "No path calculated - start and end are too close.");
+                return;
+            }
+
+            BeginFindPathInternal();
+        }
+
+        public void Reset()
+        {
+            Root = null;
+            Path = null;
+            Open.Clear();
+            OpenReverse.Clear();
+            Closed.Clear();
+            ClosedReverse.Clear();
+            MeetPoints.Clear();
+            NodesProcessed = 0;
+            StepCount = 0;
+            ExploreCount = 0;
+            _currentExplorationCount = 0;
+            _isReverse = false;
+        }
+
+        private void BeginFindPathInternal()
+        {
+            Octant.octantCount = 0;
+
+            NodesProcessed = 0;
+            StepCount = 0;
+            ExploreCount = 0;
+            _currentExplorationCount = 0;
+            _isReverse = false;
+            _minClosedGForward = double.MaxValue;
+            _minClosedGReverse = double.MaxValue;
+            _exploreCount = 0;
+
+            Open.Clear();
+            OpenReverse.Clear();
+            Closed.Clear();
+            ClosedReverse.Clear();
+            MeetPoints.Clear();
+
+            Path = new Path
+            {
+                state = Path.State.Calculating
+            };
+
+            var offsetDirection = StartOffsetDirections[_currentStartOffsetIndex];
+            var offsetDistance = AgentSize * StartOffsetFactor;
+            var offset = offsetDirection * offsetDistance;
+
+            _currentStart = _originalStart + offset;
+            Start = _currentStart;
+
+            var halfSize = AgentSize / 2.0;
+            var min = _currentStart - new Vector3D(halfSize, halfSize, halfSize);
+            var max = _currentStart + new Vector3D(halfSize, halfSize, halfSize);
+            var bounds = new BoundingBoxD(min, max);
+
+            Root = new Octant(bounds, this, null)
+            {
+                state = Octant.OctantState.Open,
+                occupancy = Octant.OctantOccupancy.Empty
+            };
+
+            // find the closest large octant center behind Start
+            {
+                var dir = (Start - End).Normalized();
+                var largeOctantCenter = Start + dir * maxRootSize / 2;
+                ExpandToEnvelopPoint(largeOctantCenter);
+            }
+            if (Root.bounds.Contains(End) != ContainmentType.Contains)
+            {
+                // find the closest large octant center behind End
+                var dir = (End - Start).Normalized();
+                var largeOctantCenter = End + dir * maxRootSize / 2;
+                ExpandToEnvelopPoint(largeOctantCenter);
+            }
+
+            SubdividePoint(Start);
+            SubdividePoint(End);
+
+            //Root.RecomputeEdges();
+
+            var startOctant = Root.GetClosestLeaf(Start);
+            if (startOctant != null)
+            {
+                startOctant.state = Octant.OctantState.Open;
+                startOctant.g = 0;
+                startOctant.h = -1;
+                startOctant.from = null;
+                startOctant.isReverse = false;
+                Open.Add(startOctant);
+            }
+
+            var endOctant = Root.GetClosestLeaf(End);
+            if (endOctant != null)
+            {
+                endOctant.state = Octant.OctantState.Open;
+                endOctant.g = 0;
+                endOctant.h = -1;
+                endOctant.from = null;
+                endOctant.isReverse = true;
+                OpenReverse.Add(endOctant);
+            }
+        }
+
+        private bool TryAdvanceStartOffset()
+        {
+            if (_currentStartOffsetIndex + 1 >= StartOffsetDirections.Length)
+            {
+                return false;
+            }
+
+            _currentStartOffsetIndex++;
+            var offsetDirection = StartOffsetDirections[_currentStartOffsetIndex];
+            var offsetDistance = AgentSize * StartOffsetFactor;
+            var offset = offsetDirection * offsetDistance;
+            MyAPIGateway.Utilities.ShowMessage(
+                "Pathfinder",
+                $"Retrying path with start offset {_currentStartOffsetIndex}: ({offset.X:F2}, {offset.Y:F2}, {offset.Z:F2})");
+            BeginFindPathInternal();
+            return true;
         }
 
         public void Update()
         {
-            if (_path.state != Path.State.Calculating)
+            if (Path == null)
+            {
+                MyAPIGateway.Utilities.ShowMessage("Pathfinder", "No path to find");
+                return;
+            }
+            if (Path.state != Path.State.Calculating)
+            {
+                MyAPIGateway.Utilities.ShowMessage("Pathfinder", "Path is not calculating");
+                return;
+            }
+
+            var settings = OctreeAStarSettings.Instance;
+            if (settings != null)
+            {
+                maxNodesPerFrame = settings.MaxNodesPerFrame;
+                exploreCostFactor = settings.ExploreCostFactor;
+                maxPathOptimizationSteps = settings.MaxPathOptimizationSteps;
+            }
+
+            StepCount++;
+            NodesProcessed = 0;
+
+            var current = MeetPoints.FirstOrDefault();
+            if (current != null)
+            {
+                _isReverse = current.isReverse;
+            }
+            else
+            {
+                if (Open.Count > 0 && OpenReverse.Count > 0)
+                {
+                    double weightForward = OpenReverse.Count;
+                    double weightReverse = Open.Count;
+                    var totalWeight = weightForward + weightReverse;
+                    var randomValue = _random.NextDouble() * totalWeight;
+                    _isReverse = randomValue >= weightForward;
+                }
+                else
+                {
+                    if (TryAdvanceStartOffset())
+                    {
+                        return;
+                    }
+
+                    Path.state = Path.State.NoPath;
+                    MyAPIGateway.Utilities.ShowMessage(
+                        "Pathfinder",
+                        $"No path found - exhausted start offsets (O: {Open.Count}, C: {Closed.Count}, OR: {OpenReverse.Count}, CR: {ClosedReverse.Count})");
+                    return;
+                }
+            }
+
+            var open = _isReverse ? OpenReverse : Open;
+            var goal = _isReverse ? Start : End;
+
+            var nodesPerFrame = maxNodesPerFrame;
+            if (nodesPerFrame <= 0) 
+            {
+                nodesPerFrame = 1;
+            }
+
+            while (NodesProcessed < nodesPerFrame)
+            {
+                if (open.Count == 0)
+                {
+                    if (TryAdvanceStartOffset())
+                    {
+                        return;
+                    }
+
+                    Path.state = Path.State.NoPath;
+                    MyAPIGateway.Utilities.ShowMessage(
+                        "Pathfinder",
+                        "No path found - open list is empty after trying offsets");
+                    return;
+                }
+
+                var lowestOpenFCost = double.MaxValue;
+
+                if (current == null)
+                {
+                    Utils.StartCallFrame("FindLowestOpenFCost");
+                    foreach (var octant in open)
+                    {
+                        if (octant.h == -1)
+                        {
+                            octant.h = Vector3D.Distance(octant.bounds.Center, goal);
+                        }
+                        if (octant.F < lowestOpenFCost)
+                        {
+                            lowestOpenFCost = octant.F;
+                            current = octant;
+                        }
+                    }
+                    Utils.EndCallFrame("FindLowestOpenFCost");
+
+                    var expandFCost = CalculateExpandFCost();
+
+                    if (expandFCost < lowestOpenFCost && Root.size / 2 < maxRootSize)
+                    {
+                        ExpandTowards(goal);
+                        //Root.RecomputeEdges();
+                        continue;
+                    }
+                }
+
+                Open.Remove(current);
+                OpenReverse.Remove(current);
+                MeetPoints.Remove(current);
+                current.state = Octant.OctantState.Closed;
+
+                var closed = _isReverse ? ClosedReverse : Closed;
+                closed.Add(current);
+                if (_isReverse)
+                {
+                    if (current.g < _minClosedGReverse)
+                    {
+                        _minClosedGReverse = current.g;
+                    }
+                }
+                else
+                {
+                    if (current.g < _minClosedGForward)
+                    {
+                        _minClosedGForward = current.g;
+                    }
+                }
+
+                if (current.occupancy == Octant.OctantOccupancy.Unknown)
+                {
+                    current.Explore();
+                    _exploreCount++;
+                }
+
+                if (current.occupancy != Octant.OctantOccupancy.Empty)
+                {
+                    NodesProcessed++;
+                    continue;
+                }
+
+                if (!_isReverse && current.bounds.Contains(End) == ContainmentType.Contains)
+                {
+                    Utils.StartCallFrame("ReconstructPath");
+                    Path.state = Path.State.Ready;
+                    ReconstructPath(current);
+                    Utils.EndCallFrame("ReconstructPath");
+                    return;
+                }
+
+                // Utils.StartCallFrame("ProcessEdges");
+                // MyAPIGateway.Utilities.ShowMessage("Pathfinder", $"Edges count: {current.edges.Count}");
+                // foreach (var edge in current.edges)
+                // {
+                //     var other = edge.GetOther(current);
+                //     if (other.state == Octant.OctantState.Unexplored)
+                //     {
+                //         other.g = current.g + Vector3D.Distance(other.bounds.Center, current.bounds.Center);
+                //         other.from = current;
+                //         other.isReverse = _isReverse;
+                //         open.Add(other);
+                //         other.state = Octant.OctantState.Open;
+                //     }
+                //     else if (other.isReverse != _isReverse)
+                //     {
+                //         if (other.occupancy == Octant.OctantOccupancy.Empty)
+                //         {
+                //             Path.state = Path.State.Ready;
+                //             if (_isReverse)
+                //             {
+                //                 ReconstructBidirectionalPath(other, current);
+                //             }
+                //             else
+                //             {
+                //                 ReconstructBidirectionalPath(current, other);
+                //             }
+                //             Utils.EndCallFrame("ProcessEdges");
+                //             return;
+                //         }
+                //         if (other.occupancy == Octant.OctantOccupancy.Unknown)
+                //         {
+                //             other.isMeet = true;
+                //             MeetPoints.Add(other);
+                //         }
+                //     }
+                // }
+                // Utils.EndCallFrame("ProcessEdges");
+
+                var neighbors = current.GetNeighbors();
+                foreach (var neighbor in neighbors)
+                {
+                    var other = neighbor;
+                    if (other.state == Octant.OctantState.Unexplored)
+                    {
+                        other.g = current.g + Vector3D.Distance(other.bounds.Center, current.bounds.Center);
+                        other.from = current;
+                        other.isReverse = _isReverse;
+                        open.Add(other);
+                        other.state = Octant.OctantState.Open;
+                    }
+                    else if (other.isReverse != _isReverse)
+                    {
+                        if (other.occupancy == Octant.OctantOccupancy.Empty)
+                        {
+                            Path.state = Path.State.Ready;
+                            if (_isReverse)
+                            {
+                                ReconstructBidirectionalPath(other, current);
+                            }
+                            else
+                            {
+                                ReconstructBidirectionalPath(current, other);
+                            }
+                            return;
+                        }
+                        if (other.occupancy == Octant.OctantOccupancy.Unknown)
+                        {
+                            other.isMeet = true;
+                            MeetPoints.Add(other);
+                        }
+                    }
+                }
+                NodesProcessed++;
+            }
+        }
+
+        private double CalculateExpandFCost()
+        {
+            var direction = Utils.FirstOptimalCardinalDirection(Root.bounds.Center, End);
+            var virtualCenter = Root.bounds.Center + direction * Root.size;
+
+            var minGToRoot = _isReverse ? _minClosedGReverse : _minClosedGForward;
+            if (minGToRoot == double.MaxValue)
+            {
+                minGToRoot = 0;
+            }
+
+            var virtualG = minGToRoot + Root.size;
+            var virtualH = Vector3D.Distance(virtualCenter, End);
+            return virtualG * gFactor + virtualH;
+        }
+
+        private void ExpandToEnvelopPoint(Vector3D point)
+        {
+            while (Root.bounds.Contains(point) != ContainmentType.Contains)
+            {
+                ExpandTowards(point);
+            }
+        }
+
+        private void ExpandTowards(Vector3D target)
+        {
+            var firstOptimalCardinalDirection = Utils.FirstOptimalCardinalDirection(Root.bounds.Center, target);
+            var secondOptimalCardinalDirection = Utils.SecondOptimalCardinalDirection(Root.bounds.Center, target);
+            var thirdOptimalCardinalDirection = Vector3D.Cross(firstOptimalCardinalDirection, secondOptimalCardinalDirection);
+            var oldSize = Root.size;
+            var halfOldSize = Root.size / 2;
+            var center = Root.bounds.Center;
+            var newCenter = center + (firstOptimalCardinalDirection + secondOptimalCardinalDirection + thirdOptimalCardinalDirection) * halfOldSize;
+            var newSize = oldSize * 2;
+            var newBounds = new BoundingBoxD(newCenter - new Vector3D(newSize, newSize, newSize) / 2, 
+                                           newCenter + new Vector3D(newSize, newSize, newSize) / 2);
+            var newOctant = new Octant(newBounds, this, null);
+            newOctant.children.Add(Root);
+            Root.parent = newOctant;
+            Root = newOctant;
+
+            var size = Root.size / 4;
+            var center1 = center + firstOptimalCardinalDirection * oldSize;
+            var bounds1 = new BoundingBoxD(center1 - new Vector3D(size, size, size), 
+                                          center1 + new Vector3D(size, size, size));
+            var octant1 = new Octant(bounds1, this, Root);
+            Root.children.Add(octant1);
+
+            var center2 = center + secondOptimalCardinalDirection * oldSize;
+            var bounds2 = new BoundingBoxD(center2 - new Vector3D(size, size, size), 
+                                          center2 + new Vector3D(size, size, size));
+            var octant2 = new Octant(bounds2, this, Root);
+            Root.children.Add(octant2);
+
+            var center3 = center + thirdOptimalCardinalDirection * oldSize;
+            var bounds3 = new BoundingBoxD(center3 - new Vector3D(size, size, size), 
+                                          center3 + new Vector3D(size, size, size));
+            var octant3 = new Octant(bounds3, this, Root);
+            Root.children.Add(octant3);
+
+            var center4 = center + (firstOptimalCardinalDirection + secondOptimalCardinalDirection) * oldSize;
+            var bounds4 = new BoundingBoxD(center4 - new Vector3D(size, size, size), 
+                                          center4 + new Vector3D(size, size, size));
+            var octant4 = new Octant(bounds4, this, Root);
+            Root.children.Add(octant4);
+
+            var center5 = center + (firstOptimalCardinalDirection + thirdOptimalCardinalDirection) * oldSize;
+            var bounds5 = new BoundingBoxD(center5 - new Vector3D(size, size, size), 
+                                          center5 + new Vector3D(size, size, size));
+            var octant5 = new Octant(bounds5, this, Root);
+            Root.children.Add(octant5);
+
+            var center6 = center + (secondOptimalCardinalDirection + thirdOptimalCardinalDirection) * oldSize;
+            var bounds6 = new BoundingBoxD(center6 - new Vector3D(size, size, size), 
+                                          center6 + new Vector3D(size, size, size));
+            var octant6 = new Octant(bounds6, this, Root);
+            Root.children.Add(octant6);
+
+            var center7 = center + (firstOptimalCardinalDirection + secondOptimalCardinalDirection + thirdOptimalCardinalDirection) * oldSize;
+            var bounds7 = new BoundingBoxD(center7 - new Vector3D(size, size, size), 
+                                          center7 + new Vector3D(size, size, size));
+            var octant7 = new Octant(bounds7, this, Root);
+            Root.children.Add(octant7);
+        }
+
+        private void SubdividePoint(Vector3D point)
+        {
+            var octant = Root.GetClosestLeaf(point);
+            while (octant != null && octant.Subdivide())
+            {
+                octant = octant.GetClosestLeaf(point);
+            }
+        }
+
+        private void ReconstructPath(Octant goal)
+        {
+            Path.points.Clear();
+            var current = goal;
+            while (current != null)
+            {
+                Path.points.Add(current.bounds.Center);
+                current = current.from;
+            }
+            Path.points.Reverse();
+            ReducePath();
+        }
+
+        private void ReconstructBidirectionalPath(Octant meetFromStart, Octant meetFromEnd)
+        {
+            Path.points.Clear();
+
+            var pathFromStart = new List<Vector3D>();
+            var current = meetFromStart;
+            while (current != null && !current.isReverse)
+            {
+                pathFromStart.Add(current.bounds.Center);
+                current = current.from;
+            }
+            pathFromStart.Reverse();
+            Path.points.AddRange(pathFromStart);
+
+            var pathFromEnd = new List<Vector3D>();
+            current = meetFromEnd;
+            while (current != null && current.isReverse)
+            {
+                pathFromEnd.Add(current.bounds.Center);
+                current = current.from;
+            }
+            Path.points.AddRange(pathFromEnd);
+            ReducePath();
+
+            // debug
+            MyAPIGateway.Utilities.ShowMessage("Pathfinder", $"explore count: {_exploreCount}");
+            MyAPIGateway.Utilities.ShowMessage("Pathfinder", $"Open count: {Open.Count}");
+            MyAPIGateway.Utilities.ShowMessage("Pathfinder", $"OpenReverse count: {OpenReverse.Count}");
+            MyAPIGateway.Utilities.ShowMessage("Pathfinder", $"Closed count: {Closed.Count}");
+            MyAPIGateway.Utilities.ShowMessage("Pathfinder", $"ClosedReverse count: {ClosedReverse.Count}");
+            MyAPIGateway.Utilities.ShowMessage("Pathfinder", $"MeetPoints count: {MeetPoints.Count}");
+            MyAPIGateway.Utilities.ShowMessage("Pathfinder", $"Root size: {Root.size}");
+            Utils.PrintCallFrames();
+        }
+
+        private void ReducePath()
+        {
+            RemoveCollinearPoints();
+            RemoveIntermediatePoints();
+        }
+
+        public void RemoveCollinearPoints()
+        {
+            if (Path == null || Path.points == null || Path.points.Count < 3)
             {
                 return;
             }
 
-            while (_open.Count > 0 && _nodesProcessed < MAX_NODES_PER_FRAME)
+            var points = Path.points;
+            var reducedPath = _collinearBuffer;
+            reducedPath.Clear();
+            reducedPath.Add(points[0]);
+
+            const double tolerance = 1e-4;
+
+            for (var i = 1; i < points.Count - 1; i++)
             {
-                double lowestFCost = double.MaxValue;
-                Octant current = null;
-                foreach (var octant in _open)
+                var prev = points[i - 1];
+                var current = points[i];
+                var next = points[i + 1];
+
+                var dir1 = current - prev;
+                var dir2 = next - current;
+
+                var cross = Vector3D.Cross(dir1, dir2);
+                var crossLenSq = cross.LengthSquared();
+                var lengthProductSq = dir1.LengthSquared() * dir2.LengthSquared();
+
+                if (lengthProductSq <= double.Epsilon || crossLenSq > tolerance * lengthProductSq)
                 {
-                    if (octant.F < lowestFCost)
-                    {
-                        lowestFCost = octant.F;
-                        current = octant;
-                    }
+                    reducedPath.Add(current);
                 }
-                _open.Remove(current);
-                if (current.State == Octant.OctantState.Unexplored)
-                {
-                    current.Explore();
-                    switch (current.State)
-                    {
-                        case Octant.OctantState.FullObstacle:
-                            continue;
-                        case Octant.OctantState.PartialObstacle:
-                            var bestChild = current.GetBestChild(_start);
-                            if (bestChild != null)
-                            {
-                                _open.Add(bestChild);
-                            }
-                            continue;
-                        case Octant.OctantState.Empty:
-                            break;
-                    }
-                }
-                _closed.Add(current);
-                _nodesProcessed++;
             }
+
+            reducedPath.Add(points[points.Count - 1]);
+
+            points.Clear();
+            points.AddRange(reducedPath);
+            reducedPath.Clear();
+        }
+
+        public void RemoveIntermediatePoints()
+        {
+            if (Path == null || Path.points == null || Path.points.Count < 3)
+            {
+                return;
+            }
+
+            var settings = OctreeAStarSettings.Instance;
+            var maxOptimizationSteps = maxPathOptimizationSteps;
+            if (settings != null)
+            {
+                maxOptimizationSteps = settings.MaxPathOptimizationSteps;
+            }
+
+            _currentExplorationCount = 0;
+            var pathPoints = _pathPointBuffer;
+            pathPoints.Clear();
+            pathPoints.AddRange(Path.points);
+
+            while (_currentExplorationCount < maxOptimizationSteps)
+            {
+                if (pathPoints.Count < 3)
+                {
+                    break;
+                }
+
+                var candidates = _candidateBuffer;
+                candidates.Clear();
+                for (var i = 1; i < pathPoints.Count - 1; i++)
+                {
+                    var octant = Root.GetClosestLeaf(pathPoints[i]);
+                    candidates.Add(new PathCandidate(i, octant));
+                }
+
+                if (candidates.Count == 0)
+                {
+                    break;
+                }
+
+                candidates.Sort((a, b) =>
+                {
+                    var sizeA = a.Octant != null ? a.Octant.size : 0.0;
+                    var sizeB = b.Octant != null ? b.Octant.size : 0.0;
+                    var sizeComparison = sizeB.CompareTo(sizeA);
+                    return sizeComparison != 0 ? sizeComparison : a.Index.CompareTo(b.Index);
+                });
+
+                var removedInPass = false;
+
+                foreach (var candidate in candidates)
+                {
+                    if (candidate.Index <= 0 || candidate.Index >= pathPoints.Count - 1)
+                    {
+                        continue;
+                    }
+
+                    if (HasClearPath(pathPoints[candidate.Index - 1], pathPoints[candidate.Index + 1], maxOptimizationSteps))
+                    {
+                        pathPoints.RemoveAt(candidate.Index);
+                        removedInPass = true;
+                        break;
+                    }
+
+                    if (_currentExplorationCount >= maxOptimizationSteps)
+                    {
+                        break;
+                    }
+                }
+
+                if (!removedInPass)
+                {
+                    break;
+                }
+            }
+
+            Path.points.Clear();
+            Path.points.AddRange(pathPoints);
+
+            pathPoints.Clear();
+            _candidateBuffer.Clear();
+        }
+
+        private bool HasClearPath(Vector3D p0, Vector3D p1, int maxOptimizationSteps)
+        {
+            var segment = p1 - p0;
+            var segmentLength = segment.Length();
+            if (segmentLength <= double.Epsilon)
+            {
+                return true;
+            }
+
+            var direction = segment / segmentLength;
+            var reference = Math.Abs(Vector3D.Dot(direction, Vector3D.Up)) > 0.99 ? Vector3D.Forward : Vector3D.Up;
+            var right = Vector3D.Cross(reference, direction);
+            if (right.LengthSquared() > 0)
+            {
+                right.Normalize();
+            }
+            var up = Vector3D.Cross(direction, right);
+            if (up.LengthSquared() > 0)
+            {
+                up.Normalize();
+            }
+
+            var offsets = _offsetBuffer;
+            offsets.Clear();
+            offsets.Add(Vector3D.Zero);
+            if (AgentSize > double.Epsilon)
+            {
+                var halfExtent = AgentSize * 0.5;
+                var rightOffset = right * halfExtent;
+                var upOffset = up * halfExtent;
+
+                offsets.Add(rightOffset + upOffset);
+                offsets.Add(rightOffset - upOffset);
+                offsets.Add(-rightOffset + upOffset);
+                offsets.Add(-rightOffset - upOffset);
+            }
+
+            var segments = _segmentBuffer;
+            segments.Clear();
+            foreach (var offset in offsets)
+            {
+                segments.Add(new SegmentPair(p0 + offset, p1 + offset));
+            }
+
+            while (true)
+            {
+                var octants = _octantBuffer;
+                octants.Clear();
+                Root.GetIntersectingOctants(p0, p1, ref octants);
+
+                var needsExploration = false;
+                foreach (var octant in octants)
+                {
+                    if (!SegmentsIntersectBounds(segments, octant.bounds))
+                    {
+                        continue;
+                    }
+
+                    if (octant.occupancy == Octant.OctantOccupancy.Full)
+                    {
+                        octants.Clear();
+                        segments.Clear();
+                        offsets.Clear();
+                        return false;
+                    }
+
+                    if (octant.occupancy == Octant.OctantOccupancy.Partial ||
+                        octant.occupancy == Octant.OctantOccupancy.Unknown)
+                    {
+                        if (_currentExplorationCount >= maxOptimizationSteps)
+                        {
+                            octants.Clear();
+                            segments.Clear();
+                            offsets.Clear();
+                            return false;
+                        }
+
+                        octant.Explore();
+                        _exploreCount++;
+                        needsExploration = true;
+                        _currentExplorationCount++;
+                        break;
+                    }
+                }
+
+                if (!needsExploration)
+                {
+                    octants.Clear();
+                    break;
+                }
+            }
+
+            segments.Clear();
+            offsets.Clear();
+            return true;
+        }
+
+        private static bool SegmentsIntersectBounds(List<SegmentPair> segments, BoundingBoxD bounds)
+        {
+            foreach (var segment in segments)
+            {
+                if (SegmentIntersectsBounds(segment.Start, segment.End, bounds))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool SegmentIntersectsBounds(Vector3D start, Vector3D end, BoundingBoxD bounds)
+        {
+            if (bounds.Contains(start) != ContainmentType.Disjoint || bounds.Contains(end) != ContainmentType.Disjoint)
+            {
+                return true;
+            }
+
+            var direction = end - start;
+            var length = direction.Length();
+            if (length <= double.Epsilon)
+            {
+                return false;
+            }
+            direction /= length;
+
+            var ray = new RayD(start, direction);
+            var distance = bounds.Intersects(ray);
+            if (distance.HasValue && distance.Value <= length)
+            {
+                return true;
+            }
+
+            var reverseRay = new RayD(end, -direction);
+            distance = bounds.Intersects(reverseRay);
+            if (distance.HasValue && distance.Value <= length)
+            {
+                return true;
+            }
+
+            return false;
         }
 
         public void Render()
         {
-            foreach (var octant in _open)
+            if (Root != null && OctreeAStarSettings.Instance.RenderOctants)
             {
-                octant.Render();
+                Root.Render();
+            }
+            if (Path != null && OctreeAStarSettings.Instance.RenderPath)
+            {
+                Path.Render();
             }
         }
+        #endregion
     }
 }

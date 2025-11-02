@@ -25,7 +25,7 @@
   </ItemGroup>
   <Import Project="..\..\..\Mixin\Mdk.Utils\Mdk.Utils.projitems" Label="Shared" />
   <Import Project="..\..\..\Mixin\Mdk.Navigation\Mdk.Navigation.projitems" Label="Shared" />
-  <Import Project="..\..\..\Mixin\Mdk.NavigationWithCollisionAvoidance\Mdk.NavigationWithCollisionAvoidance.projitems" Label="Shared" />
+  <Import Project="..\..\..\Mixin\Mdk.PathfinderNavigation\Mdk.PathfinderNavigation.projitems" Label="Shared" />
   <Import Project="..\..\..\Mixin\Mdk.StateMachine\Mdk.StateMachine.projitems" Label="Shared" />
   <Import Project="..\..\..\Mixin\Mdk.CustomDataConnector\Mdk.CustomDataConnector.projitems" Label="Shared" />
   <Import Project="..\..\..\Mixin\Mdk.AutoDockDrone\Mdk.AutoDockDrone.projitems" Label="Shared" />

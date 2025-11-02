@@ -20,7 +20,7 @@ namespace IngameScript
         private Alignment _alignment;
         private IMyShipConnector _connector;
         private IMyRemoteControl _remoteControl;
-        private NavigationWithCollisionAvoidance _navigationWithCollisionAvoidance;
+        private PathfindingNavigation _pathfinderNavigation;
         private IMyBroadcastListener _broadcastListener;
         private IMyUnicastListener _unicastListener;
         private long _stationPbId;
@@ -28,12 +28,12 @@ namespace IngameScript
 
         #region Methods
 
-        public bool Initialize(Program program, Navigation navigation, Alignment alignment, NavigationWithCollisionAvoidance navigationWithCollisionAvoidance, out string errorMessage)
+        public bool Initialize(Program program, Navigation navigation, Alignment alignment, PathfindingNavigation pathfinderNavigation, out string errorMessage)
         {
             _program = program;
             _navigation = navigation;
             _alignment = alignment;
-            _navigationWithCollisionAvoidance = navigationWithCollisionAvoidance;
+            _pathfinderNavigation = pathfinderNavigation;
             errorMessage = string.Empty;
 
             _remoteControl = program.GetLocalBlock<IMyRemoteControl>();
@@ -80,7 +80,7 @@ namespace IngameScript
             }
 
             HandleMessages();
-            _navigationWithCollisionAvoidance.Execute();
+            _pathfinderNavigation.Execute();
             base.Execute();
         }
 
@@ -166,7 +166,7 @@ namespace IngameScript
                 return;
             }
 
-            _navigationWithCollisionAvoidance.Stop();
+            _pathfinderNavigation.Stop();
 
             if (_connector.IsConnected)
             {
@@ -246,7 +246,7 @@ namespace IngameScript
 
             public override void Enter()
             {
-                _context._navigationWithCollisionAvoidance.Stop();
+                _context._pathfinderNavigation.Stop();
                 _context._navigation.Stop();
                 _context._alignment.Stop();
                 _context._navigation.PowerOff();
@@ -335,12 +335,12 @@ namespace IngameScript
             public override void Enter()
             {
                 _context._program.Echo("Navigating to approach position");
-                _context._navigationWithCollisionAvoidance.NavigateTo(_approachPosition, 20.0, 1.0, _stationVelocity);
+                _context._pathfinderNavigation.NavigateTo(_approachPosition, 20.0, 1.0, _stationVelocity);
             }
 
             public override void Execute()
             {
-                var navigationState = _context._navigationWithCollisionAvoidance.GetNavigationState();
+                var navigationState = _context._pathfinderNavigation.GetNavigationState();
                 
                 if (navigationState == NavigationWithCollisionAvoidance.NavigationState.Stuck)
                 {

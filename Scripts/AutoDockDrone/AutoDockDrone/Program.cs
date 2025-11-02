@@ -25,7 +25,7 @@ namespace IngameScript
         private CustomDataConnector _customDataConnector;
         private Navigation _navigation;
         private Alignment _alignment;
-        private NavigationWithCollisionAvoidance _navigationWithCollisionAvoidance;
+        private PathfindingNavigation _pathfinderNavigation;
         private AutoDockDrone _autoDockDrone;
 
         public Program()
@@ -37,7 +37,7 @@ namespace IngameScript
 
             _navigation = new Navigation();
             _alignment = new Alignment();
-            _navigationWithCollisionAvoidance = new NavigationWithCollisionAvoidance();
+            _pathfinderNavigation = new PathfindingNavigation();
             _autoDockDrone = new AutoDockDrone();
 
             string errorMessage;
@@ -51,12 +51,12 @@ namespace IngameScript
                 Echo($"Alignment Error: {errorMessage}");
             }
 
-            if (!_navigationWithCollisionAvoidance.Initialize(this, _alignment, _navigation, _customDataConnector, out errorMessage))
+            if (!_pathfinderNavigation.Initialize(this, _navigation, _alignment, out errorMessage))
             {
-                Echo($"NavigationWithCollisionAvoidance Error: {errorMessage}");
+                Echo($"PathfinderNavigation Error: {errorMessage}");
             }
 
-            if (!_autoDockDrone.Initialize(this, _navigation, _alignment, _navigationWithCollisionAvoidance, out errorMessage))
+            if (!_autoDockDrone.Initialize(this, _navigation, _alignment, _pathfinderNavigation, out errorMessage))
             {
                 Echo($"AutoDockDrone Error: {errorMessage}");
             }
