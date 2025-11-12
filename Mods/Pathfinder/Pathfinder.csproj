@@ -96,9 +96,9 @@
           <Compile Include="Data\Scripts\Pathfinder\OctreeAStar\Octant.cs" />
           <Compile Include="Data\Scripts\Pathfinder\OctreeAStar\Graph.cs" />
           <Compile Include="Data\Scripts\Pathfinder\OctreeAStar\Path.cs" />
-          <Compile Include="Data\Scripts\Pathfinder\OctreeAStar\Edge.cs" />
           <Compile Include="Data\Scripts\Pathfinder\OctreeAStar\OctreeAStarSettings.cs" />
           <Compile Include="Data\Scripts\Pathfinder\OctreeAStar\OctreeAStar.cs" />
+          <Compile Include="Data\Scripts\Pathfinder\OctreeAStar\RVO.cs" />
         </ItemGroup>
   <ItemGroup>
     <None Include=".vs\ProjectSettings.json" />

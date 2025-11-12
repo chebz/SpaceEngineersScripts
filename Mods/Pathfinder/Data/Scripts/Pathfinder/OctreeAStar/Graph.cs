@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Sandbox.ModAPI;
 using VRage.Game.ModAPI;
+using VRage.Utils;
 using VRageMath;
 
 namespace Pathfinder.OctreeAStar
@@ -14,14 +15,15 @@ namespace Pathfinder.OctreeAStar
         public int maxNodesPerFrame = 1;
         public double gFactor = 0.1;
         public double exploreCostFactor = 0.75;
+        public double exploreCostFactorInTerrain = 10.0;
+        public double altitudeCostFactor = 1.0;
         public int maxPathOptimizationSteps = 100;
+        private bool _endFound;
         private bool _isReverse;
         private int _currentExplorationCount;
         private readonly Random _random = new Random();
         private double _minClosedGForward;
         private double _minClosedGReverse;
-        private readonly List<PathCandidate> _candidateBuffer = new List<PathCandidate>();
-        private readonly List<Vector3D> _pathPointBuffer = new List<Vector3D>();
         private readonly List<Vector3D> _collinearBuffer = new List<Vector3D>();
         private readonly List<Vector3D> _offsetBuffer = new List<Vector3D>();
         private readonly List<SegmentPair> _segmentBuffer = new List<SegmentPair>();
@@ -79,9 +81,15 @@ namespace Pathfinder.OctreeAStar
 
         public Vector3D End { get; private set; }
 
+        public IMyRemoteControl RemoteControl { get; private set; }
+
         public IMyCubeGrid OwnGrid { get; private set; }
 
         public double AgentSize { get; private set; }
+
+        public double MinAltitude { get; private set; }
+
+        public double MaxAltitude { get; private set; }
 
         public Path Path { get; private set; }
 
@@ -108,14 +116,29 @@ namespace Pathfinder.OctreeAStar
             ExploreCount++;
         }
 
-        public void BeginFindPath(IMyCubeGrid ownGrid, Vector3D start, Vector3D end)
+        public void BeginFindPath(IMyRemoteControl remoteControl, Vector3D start, Vector3D end, double minAltitude, double maxAltitude)
         {
-            OwnGrid = ownGrid;
-            AgentSize = ownGrid.WorldVolume.Radius * 2;
+            RemoteControl = remoteControl;
+            OwnGrid = remoteControl.CubeGrid;
+            AgentSize = OwnGrid.WorldVolume.Radius * 2;
+            MinAltitude = minAltitude;
+            MaxAltitude = maxAltitude;
+
+            var settings = OctreeAStarSettings.Instance;
+            var configuredMaxRootSize = settings.MaxRootSize;
+            var configuredMinRootSize = settings.MinRootSize;
             _originalStart = start;
             Start = start;
             End = end;
             _currentStartOffsetIndex = 0;
+            _endFound = false;
+
+            var distance = Vector3D.Distance(start, end);
+            var scaledDistance = distance / 10.0;
+            var effectiveMinRootSize = configuredMinRootSize > 0 ? configuredMinRootSize : 0.0;
+            var effectiveMaxRootSize = configuredMaxRootSize > 0 ? configuredMaxRootSize : double.MaxValue;
+            var desiredRootSize = Math.Max(effectiveMinRootSize, scaledDistance);
+            maxRootSize = Math.Min(effectiveMaxRootSize, desiredRootSize);
 
             var minimumDistance = AgentSize > 0 ? AgentSize * 2.0 : 0.0;
             if (minimumDistance > 0.0 && Vector3D.Distance(start, end) < minimumDistance)
@@ -203,6 +226,14 @@ namespace Pathfinder.OctreeAStar
                 occupancy = Octant.OctantOccupancy.Empty
             };
 
+            Utils.Log(MyLogSeverity.Info, "Pathfinder: {0}", $"Max Root size: {maxRootSize}");
+
+            // try to find the closest bounds to End that is Empty
+            if (!TryFindEnd())
+            {
+                MyAPIGateway.Utilities.ShowMessage("Pathfinder", "No path found, end point is not reachable");
+                return;
+            }
             // find the closest large octant center behind Start
             {
                 var dir = (Start - End).Normalized();
@@ -219,8 +250,6 @@ namespace Pathfinder.OctreeAStar
 
             SubdividePoint(Start);
             SubdividePoint(End);
-
-            //Root.RecomputeEdges();
 
             var startOctant = Root.GetClosestLeaf(Start);
             if (startOctant != null)
@@ -256,9 +285,7 @@ namespace Pathfinder.OctreeAStar
             var offsetDirection = StartOffsetDirections[_currentStartOffsetIndex];
             var offsetDistance = AgentSize * StartOffsetFactor;
             var offset = offsetDirection * offsetDistance;
-            MyAPIGateway.Utilities.ShowMessage(
-                "Pathfinder",
-                $"Retrying path with start offset {_currentStartOffsetIndex}: ({offset.X:F2}, {offset.Y:F2}, {offset.Z:F2})");
+                Utils.Log(MyLogSeverity.Info, "Pathfinder: {0}", $"Retrying path with start offset {_currentStartOffsetIndex}: ({offset.X:F2}, {offset.Y:F2}, {offset.Z:F2})");
             BeginFindPathInternal();
             return true;
         }
@@ -281,6 +308,8 @@ namespace Pathfinder.OctreeAStar
             {
                 maxNodesPerFrame = settings.MaxNodesPerFrame;
                 exploreCostFactor = settings.ExploreCostFactor;
+                exploreCostFactorInTerrain = settings.ExploreCostFactorInTerrain;
+                altitudeCostFactor = settings.AltitudeCostFactor;
                 maxPathOptimizationSteps = settings.MaxPathOptimizationSteps;
             }
 
@@ -310,9 +339,7 @@ namespace Pathfinder.OctreeAStar
                     }
 
                     Path.state = Path.State.NoPath;
-                    MyAPIGateway.Utilities.ShowMessage(
-                        "Pathfinder",
-                        $"No path found - exhausted start offsets (O: {Open.Count}, C: {Closed.Count}, OR: {OpenReverse.Count}, CR: {ClosedReverse.Count})");
+                    MyAPIGateway.Utilities.ShowMessage("Pathfinder", "No path found");
                     return;
                 }
             }
@@ -336,9 +363,7 @@ namespace Pathfinder.OctreeAStar
                     }
 
                     Path.state = Path.State.NoPath;
-                    MyAPIGateway.Utilities.ShowMessage(
-                        "Pathfinder",
-                        "No path found - open list is empty after trying offsets");
+                    MyAPIGateway.Utilities.ShowMessage("Pathfinder", "No path found");
                     return;
                 }
 
@@ -346,7 +371,6 @@ namespace Pathfinder.OctreeAStar
 
                 if (current == null)
                 {
-                    Utils.StartCallFrame("FindLowestOpenFCost");
                     foreach (var octant in open)
                     {
                         if (octant.h == -1)
@@ -359,14 +383,12 @@ namespace Pathfinder.OctreeAStar
                             current = octant;
                         }
                     }
-                    Utils.EndCallFrame("FindLowestOpenFCost");
 
                     var expandFCost = CalculateExpandFCost();
 
                     if (expandFCost < lowestOpenFCost && Root.size / 2 < maxRootSize)
                     {
                         ExpandTowards(goal);
-                        //Root.RecomputeEdges();
                         continue;
                     }
                 }
@@ -407,52 +429,19 @@ namespace Pathfinder.OctreeAStar
 
                 if (!_isReverse && current.bounds.Contains(End) == ContainmentType.Contains)
                 {
-                    Utils.StartCallFrame("ReconstructPath");
                     Path.state = Path.State.Ready;
                     ReconstructPath(current);
-                    Utils.EndCallFrame("ReconstructPath");
                     return;
                 }
 
-                // Utils.StartCallFrame("ProcessEdges");
-                // MyAPIGateway.Utilities.ShowMessage("Pathfinder", $"Edges count: {current.edges.Count}");
-                // foreach (var edge in current.edges)
-                // {
-                //     var other = edge.GetOther(current);
-                //     if (other.state == Octant.OctantState.Unexplored)
-                //     {
-                //         other.g = current.g + Vector3D.Distance(other.bounds.Center, current.bounds.Center);
-                //         other.from = current;
-                //         other.isReverse = _isReverse;
-                //         open.Add(other);
-                //         other.state = Octant.OctantState.Open;
-                //     }
-                //     else if (other.isReverse != _isReverse)
-                //     {
-                //         if (other.occupancy == Octant.OctantOccupancy.Empty)
-                //         {
-                //             Path.state = Path.State.Ready;
-                //             if (_isReverse)
-                //             {
-                //                 ReconstructBidirectionalPath(other, current);
-                //             }
-                //             else
-                //             {
-                //                 ReconstructBidirectionalPath(current, other);
-                //             }
-                //             Utils.EndCallFrame("ProcessEdges");
-                //             return;
-                //         }
-                //         if (other.occupancy == Octant.OctantOccupancy.Unknown)
-                //         {
-                //             other.isMeet = true;
-                //             MeetPoints.Add(other);
-                //         }
-                //     }
-                // }
-                // Utils.EndCallFrame("ProcessEdges");
-
                 var neighbors = current.GetNeighbors();
+                foreach (var neighbor in neighbors)
+                {
+                    neighbor.SubdivideToMaxSize();
+                }
+                neighbors = current.GetNeighbors();
+
+
                 foreach (var neighbor in neighbors)
                 {
                     var other = neighbor;
@@ -479,7 +468,7 @@ namespace Pathfinder.OctreeAStar
                             }
                             return;
                         }
-                        if (other.occupancy == Octant.OctantOccupancy.Unknown)
+                        if (other.occupancy == Octant.OctantOccupancy.Unknown || other.occupancy == Octant.OctantOccupancy.PartialInTerrain)
                         {
                             other.isMeet = true;
                             MeetPoints.Add(other);
@@ -488,6 +477,9 @@ namespace Pathfinder.OctreeAStar
                 }
                 NodesProcessed++;
             }
+            // Utils.Log(MyLogSeverity.Info, "Pathfinder: {0}", $"NodesProcessed: {NodesProcessed}");
+            // Utils.Log(MyLogSeverity.Info, "Pathfinder: {0}", $"Closed: {Closed.Count}");
+            // Utils.Log(MyLogSeverity.Info, "Pathfinder: {0}", $"ClosedReverse: {ClosedReverse.Count}");
         }
 
         private double CalculateExpandFCost()
@@ -575,6 +567,41 @@ namespace Pathfinder.OctreeAStar
             Root.children.Add(octant7);
         }
 
+        public bool TryFindEnd()
+        {
+            // find the closest bounds to End that is Empty
+            // center
+            var fullSize = new Vector3D(AgentSize, AgentSize, AgentSize);
+            var halfSize = fullSize * 0.5;
+
+            var offsets = new Vector3D[]
+            {
+                Vector3D.Zero,
+                new Vector3D(-AgentSize, 0, 0),
+                new Vector3D(AgentSize, 0, 0),
+                new Vector3D(0, -AgentSize, 0),
+                new Vector3D(0, AgentSize, 0),
+                new Vector3D(-AgentSize, -AgentSize, 0),
+                new Vector3D(-AgentSize, AgentSize, 0),
+                new Vector3D(AgentSize, -AgentSize, 0),
+                new Vector3D(AgentSize, AgentSize, 0)
+            };
+
+            for (int i = 0; i < offsets.Length; i++)
+            {
+                var center = End + offsets[i];
+                var bounds = new BoundingBoxD(center - halfSize, center + halfSize);
+                var occupancy = Utils.GetOccupancy(bounds, OwnGrid);
+                if (occupancy == Octant.OctantOccupancy.Empty)
+                {
+                    End = center;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         private void SubdividePoint(Vector3D point)
         {
             var octant = Root.GetClosestLeaf(point);
@@ -622,14 +649,14 @@ namespace Pathfinder.OctreeAStar
             ReducePath();
 
             // debug
-            MyAPIGateway.Utilities.ShowMessage("Pathfinder", $"explore count: {_exploreCount}");
-            MyAPIGateway.Utilities.ShowMessage("Pathfinder", $"Open count: {Open.Count}");
-            MyAPIGateway.Utilities.ShowMessage("Pathfinder", $"OpenReverse count: {OpenReverse.Count}");
-            MyAPIGateway.Utilities.ShowMessage("Pathfinder", $"Closed count: {Closed.Count}");
-            MyAPIGateway.Utilities.ShowMessage("Pathfinder", $"ClosedReverse count: {ClosedReverse.Count}");
-            MyAPIGateway.Utilities.ShowMessage("Pathfinder", $"MeetPoints count: {MeetPoints.Count}");
-            MyAPIGateway.Utilities.ShowMessage("Pathfinder", $"Root size: {Root.size}");
-            Utils.PrintCallFrames();
+            // MyAPIGateway.Utilities.ShowMessage("Pathfinder", $"explore count: {_exploreCount}");
+            // MyAPIGateway.Utilities.ShowMessage("Pathfinder", $"Open count: {Open.Count}");
+            // MyAPIGateway.Utilities.ShowMessage("Pathfinder", $"OpenReverse count: {OpenReverse.Count}");
+            // MyAPIGateway.Utilities.ShowMessage("Pathfinder", $"Closed count: {Closed.Count}");
+            // MyAPIGateway.Utilities.ShowMessage("Pathfinder", $"ClosedReverse count: {ClosedReverse.Count}");
+            // MyAPIGateway.Utilities.ShowMessage("Pathfinder", $"MeetPoints count: {MeetPoints.Count}");
+            // MyAPIGateway.Utilities.ShowMessage("Pathfinder", $"Root size: {Root.size}");
+            // Utils.PrintCallFrames();
         }
 
         private void ReducePath()
@@ -693,22 +720,20 @@ namespace Pathfinder.OctreeAStar
             }
 
             _currentExplorationCount = 0;
-            var pathPoints = _pathPointBuffer;
-            pathPoints.Clear();
-            pathPoints.AddRange(Path.points);
+            var workingPoints = new List<Vector3D>(Path.points);
+            var originalCount = workingPoints.Count;
 
             while (_currentExplorationCount < maxOptimizationSteps)
             {
-                if (pathPoints.Count < 3)
+                if (workingPoints.Count < 3)
                 {
                     break;
                 }
 
-                var candidates = _candidateBuffer;
-                candidates.Clear();
-                for (var i = 1; i < pathPoints.Count - 1; i++)
+                var candidates = new List<PathCandidate>(workingPoints.Count);
+                for (var i = 1; i < workingPoints.Count - 1; i++)
                 {
-                    var octant = Root.GetClosestLeaf(pathPoints[i]);
+                    var octant = Root != null ? Root.GetClosestLeaf(workingPoints[i]) : null;
                     candidates.Add(new PathCandidate(i, octant));
                 }
 
@@ -727,37 +752,38 @@ namespace Pathfinder.OctreeAStar
 
                 var removedInPass = false;
 
-                foreach (var candidate in candidates)
+                for (var i = 0; i < candidates.Count && _currentExplorationCount < maxOptimizationSteps; i++)
                 {
-                    if (candidate.Index <= 0 || candidate.Index >= pathPoints.Count - 1)
+                    var candidate = candidates[i];
+                    var index = candidate.Index;
+
+                    if (index <= 0 || index >= workingPoints.Count - 1)
                     {
                         continue;
                     }
 
-                    if (HasClearPath(pathPoints[candidate.Index - 1], pathPoints[candidate.Index + 1], maxOptimizationSteps))
+                    var previous = workingPoints[index - 1];
+                    var next = workingPoints[index + 1];
+
+                    if (!HasClearPath(previous, next, maxOptimizationSteps))
                     {
-                        pathPoints.RemoveAt(candidate.Index);
-                        removedInPass = true;
-                        break;
+                        continue;
                     }
 
-                    if (_currentExplorationCount >= maxOptimizationSteps)
-                    {
-                        break;
-                    }
+                    Path.points.RemoveAt(index);
+                    workingPoints.RemoveAt(index);
+                    removedInPass = true;
+                    break;
                 }
 
                 if (!removedInPass)
                 {
+                    Utils.Log(MyLogSeverity.Info, "Pathfinder: {0}", $"No intermediate points removed");
                     break;
                 }
             }
-
-            Path.points.Clear();
-            Path.points.AddRange(pathPoints);
-
-            pathPoints.Clear();
-            _candidateBuffer.Clear();
+            Utils.Log(MyLogSeverity.Info, "Pathfinder: {0}", $"Optimization steps performed: {_currentExplorationCount}");
+            Utils.Log(MyLogSeverity.Info, "Pathfinder: {0}", $"Intermediate points removed: {originalCount - Path.points.Count}");
         }
 
         private bool HasClearPath(Vector3D p0, Vector3D p1, int maxOptimizationSteps)

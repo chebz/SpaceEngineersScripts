@@ -67,13 +67,13 @@ namespace IngameScript
             return blocks.Where(b => b.IsSameConstructAs(program.Me)).ToList();
         }
 
-        public static void Log(this IMyRemoteControl remoteControl, string message)
+        public static void Log(this IMyTerminalBlock remoteControl, string message)
         {
             var timestamp = DateTime.Now.ToString("mm:ss.fff");
             remoteControl.CustomData = $"{remoteControl.CustomData}\n[{timestamp}] {message}";
         }
 
-        public static void ClearLog(this IMyRemoteControl remoteControl)
+        public static void ClearLog(this IMyTerminalBlock remoteControl)
         {
             remoteControl.CustomData = string.Empty;
         }

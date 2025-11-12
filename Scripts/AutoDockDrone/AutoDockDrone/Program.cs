@@ -27,6 +27,7 @@ namespace IngameScript
         private Alignment _alignment;
         private PathfindingNavigation _pathfinderNavigation;
         private AutoDockDrone _autoDockDrone;
+        private IMyProgrammableBlock _callbackProgrammableBlock;
 
         public Program()
         {
@@ -51,17 +52,22 @@ namespace IngameScript
                 Echo($"Alignment Error: {errorMessage}");
             }
 
-            if (!_pathfinderNavigation.Initialize(this, _navigation, _alignment, out errorMessage))
+            if (!_pathfinderNavigation.Initialize(this, _customDataConnector, _navigation, _alignment, out errorMessage))
             {
                 Echo($"PathfinderNavigation Error: {errorMessage}");
             }
 
-            if (!_autoDockDrone.Initialize(this, _navigation, _alignment, _pathfinderNavigation, out errorMessage))
+            if (!_autoDockDrone.Initialize(this, _customDataConnector, _navigation, _alignment, _pathfinderNavigation, out errorMessage))
             {
                 Echo($"AutoDockDrone Error: {errorMessage}");
             }
 
+            _autoDockDrone.SetDockedCallback(OnAutoDockDocked);
+            _autoDockDrone.SetUndockedCallback(OnAutoDockUndocked);
+
             _customDataConnector.Load();
+
+            Echo("AutoDockDrone initialized");
         }
 
         public void Save()
@@ -98,8 +104,16 @@ namespace IngameScript
                             long stationPbId, stationGridId;
                             if (long.TryParse(parts[1], out stationPbId) && long.TryParse(parts[2], out stationGridId))
                             {
-                                _autoDockDrone.DockToStation(stationPbId);
-                                Echo($"Received dock order to station {stationGridId}");
+                                var connectorName = parts.Length >= 4 ? parts[3] : "*";
+                                _autoDockDrone.DockToStation(stationPbId, connectorName);
+                                if (connectorName == "*")
+                                {
+                                    Echo($"Received dock order to station {stationGridId}");
+                                }
+                                else
+                                {
+                                    Echo($"Received dock order to station {stationGridId} ({connectorName})");
+                                }
                             }
                             else
                             {
@@ -114,16 +128,62 @@ namespace IngameScript
 
         private void HandleCommand(string argument)
         {
-            var command = argument.ToLower();
+            if (string.IsNullOrWhiteSpace(argument))
+            {
+                return;
+            }
+
+            var trimmed = argument.Trim();
+            var spaceIndex = trimmed.IndexOf(' ');
+            var command = spaceIndex >= 0 ? trimmed.Substring(0, spaceIndex).ToLower() : trimmed.ToLower();
+            var commandArgs = spaceIndex >= 0 ? trimmed.Substring(spaceIndex + 1).Trim() : string.Empty;
 
             switch (command)
             {
                 case "dock":
-                    _autoDockDrone.DockToNearest();
-                    Echo("Requesting docking to nearest station...");
+                    var connectorName = "*";
+                    var callbackName = string.Empty;
+
+                    if (!string.IsNullOrEmpty(commandArgs))
+                    {
+                        var separatorIndex = commandArgs.IndexOf(' ');
+                        if (separatorIndex == -1)
+                        {
+                            connectorName = commandArgs;
+                        }
+                        else
+                        {
+                            connectorName = commandArgs.Substring(0, separatorIndex).Trim();
+                            callbackName = commandArgs.Substring(separatorIndex + 1).Trim();
+                        }
+
+                        if (string.IsNullOrEmpty(connectorName))
+                        {
+                            connectorName = "*";
+                        }
+                    }
+
+                    if (!string.IsNullOrEmpty(callbackName))
+                    {
+                        LinkCallbackProgrammableBlock(callbackName);
+                    }
+
+                    _autoDockDrone.DockToNearest(connectorName);
+                    if (connectorName == "*")
+                    {
+                        Echo("Requesting docking to nearest station...");
+                    }
+                    else
+                    {
+                        Echo($"Requesting docking to nearest station ({connectorName})...");
+                    }
                     break;
 
                 case "undock":
+                    if (!string.IsNullOrEmpty(commandArgs))
+                    {
+                        LinkCallbackProgrammableBlock(commandArgs);
+                    }
                     _autoDockDrone.Undock();
                     Echo("Undocking...");
                     break;
@@ -151,13 +211,71 @@ namespace IngameScript
             }
             else if (_autoDockDrone.IsUndocked())
             {
-                _autoDockDrone.DockToNearest();
+                _autoDockDrone.DockToNearest("*");
                 Echo("Requesting docking to nearest station...");
             }
             else
             {
                 Echo("Cannot toggle - operation in progress");
             }
+        }
+
+        private void OnAutoDockDocked()
+        {
+            TriggerCallback("ad_docked");
+        }
+
+        private void OnAutoDockUndocked()
+        {
+            TriggerCallback("ad_undocked");
+        }
+
+        private void TriggerCallback(string command)
+        {
+            if (_callbackProgrammableBlock == null)
+            {
+                return;
+            }
+
+            if (!_callbackProgrammableBlock.IsFunctional)
+            {
+                return;
+            }
+
+            _callbackProgrammableBlock.TryRun(command);
+        }
+
+        private void LinkCallbackProgrammableBlock(string programmableBlockName)
+        {
+            var programmableBlock = FindProgrammableBlock(programmableBlockName);
+            if (programmableBlock == null)
+            {
+                Echo($"Programmable block '{programmableBlockName}' not found");
+                return;
+            }
+
+            _callbackProgrammableBlock = programmableBlock;
+            Echo($"Linked programmable block '{_callbackProgrammableBlock.CustomName}'");
+        }
+
+        private IMyProgrammableBlock FindProgrammableBlock(string programmableBlockName)
+        {
+            if (string.IsNullOrEmpty(programmableBlockName))
+            {
+                return null;
+            }
+
+            var blocks = new List<IMyProgrammableBlock>();
+            GridTerminalSystem.GetBlocksOfType(blocks, block =>
+                block.IsSameConstructAs(Me) &&
+                block.CustomName.IndexOf(programmableBlockName, StringComparison.OrdinalIgnoreCase) >= 0);
+
+            if (blocks.Count == 0)
+            {
+                return null;
+            }
+
+            return blocks[0];
         }
     }
 }

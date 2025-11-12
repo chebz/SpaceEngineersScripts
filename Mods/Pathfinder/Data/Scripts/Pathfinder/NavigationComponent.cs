@@ -14,12 +14,16 @@ using VRage.ObjectBuilders;
 using Sandbox.ModAPI.Ingame;
 using VRage.Game.ModAPI;
 using Pathfinder.OctreeAStar;
+using Sandbox.Game.Entities.Blocks;
 
 namespace Pathfinder
 {
     [MyEntityComponentDescriptor(typeof(MyObjectBuilder_RemoteControl), false)]
     public class NavigationComponent : MyGameLogicComponent
     {
+        private const double DEFAULT_MIN_ALTITUDE = 100.0;
+        private const double DEFAULT_MAX_ALTITUDE = 0.0;
+
         private bool _initialized = false;
         private Sandbox.ModAPI.IMyRemoteControl _remoteControl;
         private bool _needsRecompute = false;
@@ -27,8 +31,14 @@ namespace Pathfinder
         private Graph _graph;
         private DateTime _pathStartTime = DateTime.MinValue;
         private static readonly Guid PATHFINDER_GOAL_STORAGE_ID = new Guid("7ff8e4a6-69ca-48d3-917e-8d8d4c3a4d9a");
+        private static readonly Guid MIN_ALTITUDE_STORAGE_ID = new Guid("79df6c4d-962b-438f-b7b3-eca6c479d67d");
+        private static readonly Guid MAX_ALTITUDE_STORAGE_ID = new Guid("3a75e1a9-bdc9-4a07-b5f1-9b9b6c1b0ed8");
         private Vector3D? _destination = null;
         private bool _suppressSave;
+        private Vector3D? _lastStartPosition;
+        private const double POSITION_EPSILON = 0.1;
+        private double _minAltitude = DEFAULT_MIN_ALTITUDE;
+        private double _maxAltitude = DEFAULT_MAX_ALTITUDE;
 
         public bool NeedsRecompute
         {
@@ -41,11 +51,55 @@ namespace Pathfinder
             get { return _destination; }
             set 
             { 
-                if (_destination == value)
+                var newDestination = value;
+                bool destinationChanged = !AreClose(_destination, newDestination, POSITION_EPSILON);
+
+                _destination = newDestination;
+
+                bool droneMoved = HasDroneMoved(POSITION_EPSILON);
+
+                if (destinationChanged || droneMoved)
+                {
+                    _needsRecompute = true;
+                    if (destinationChanged)
+                    {
+                        Save();
+                    }
+                }
+            }
+        }
+
+        public double MinAltitude
+        {
+            get 
+            { 
+                return _minAltitude; 
+            }
+            set 
+            { 
+                if (Math.Abs(value - _minAltitude) < 0.01)
                 {
                     return;
                 }
-                _destination = value; 
+                _minAltitude = value;
+                _needsRecompute = true;
+                Save();
+            }
+        }
+
+        public double MaxAltitude
+        {
+            get
+            {
+                return _maxAltitude;
+            }
+            set
+            {
+                if (Math.Abs(value - _maxAltitude) < 0.01)
+                {
+                    return;
+                }
+                _maxAltitude = value;
                 _needsRecompute = true;
                 Save();
             }
@@ -69,11 +123,19 @@ namespace Pathfinder
         {
             if (!_initialized)
             {
-                if (Entity is Sandbox.ModAPI.IMyRemoteControl)
+                if (_remoteControl == null && Entity is Sandbox.ModAPI.IMyRemoteControl)
                 {
                     _remoteControl = (Sandbox.ModAPI.IMyRemoteControl)Entity;
+                }
+
+                if (!Load())
+                {
+                    return;
+                }
+                if (_remoteControl != null)
+                {
                     _graph = new Graph();
-                    Load();
+                    
                     _initialized = true;
                 }
                 return;
@@ -103,8 +165,9 @@ namespace Pathfinder
             if (_needsRecompute)
             {
                 _needsRecompute = false;
-                _graph.BeginFindPath(_remoteControl.CubeGrid, start, destination);
+                _graph.BeginFindPath(_remoteControl, start, destination, MinAltitude, MaxAltitude);
                 _pathStartTime = DateTime.Now;
+                _lastStartPosition = start;
                 MyAPIGateway.Utilities.ShowMessage("Pathfinder", $"Starting pathfinding to GPS '{_destination.Value}'");
             }
 
@@ -137,24 +200,68 @@ namespace Pathfinder
             _graphReset = true;
         }
 
-        private void Load()
+        private bool Load()
         {
             if (_remoteControl == null)
             {
-                return;
+                return false;
             }
             var storage = _remoteControl.Storage;
             if (storage == null)
             {
-                return;
+                storage = new MyModStorageComponent();
+                _remoteControl.Storage = storage;
             }
             string value;
-            if (!storage.TryGetValue(PATHFINDER_GOAL_STORAGE_ID, out value) || string.IsNullOrWhiteSpace(value))
+            // destination
+            if (storage.TryGetValue(PATHFINDER_GOAL_STORAGE_ID, out value))
             {
-                WithSaveSuppressed(() => Destination = null);
-                return;
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    Destination = null;
+                }
+                else
+                {
+                    WithSaveSuppressed(() => Destination = Utils.ParseCoordsFromString(value));
+                }
             }
-            WithSaveSuppressed(() => Destination = Utils.ParseCoordsFromString(value));
+            else
+            {
+                Destination = null;
+            }
+            // min altitude
+            if (storage.TryGetValue(MIN_ALTITUDE_STORAGE_ID, out value))
+            {
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    MinAltitude = DEFAULT_MIN_ALTITUDE;
+                }
+                else
+                {
+                    WithSaveSuppressed(() => MinAltitude = double.Parse(value, CultureInfo.InvariantCulture));
+                }
+            }
+            else
+            {
+                MinAltitude = DEFAULT_MIN_ALTITUDE;
+            }
+            // max altitude
+            if (storage.TryGetValue(MAX_ALTITUDE_STORAGE_ID, out value))
+            {
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    MaxAltitude = DEFAULT_MAX_ALTITUDE;
+                }
+                else
+                {
+                    WithSaveSuppressed(() => MaxAltitude = double.Parse(value, CultureInfo.InvariantCulture));
+                }
+            }
+            else
+            {
+                MaxAltitude = DEFAULT_MAX_ALTITUDE;
+            }
+            return true;
         }
 
         private void Save()
@@ -168,8 +275,11 @@ namespace Pathfinder
                 _remoteControl.Storage = new MyModStorageComponent();
             }
             var destinationString = Utils.GetStringFromCoords(Destination);
-            _remoteControl.Storage.RemoveValue(PATHFINDER_GOAL_STORAGE_ID);
             _remoteControl.Storage.SetValue(PATHFINDER_GOAL_STORAGE_ID, destinationString);
+            var minAltitudeString = MinAltitude.ToString(CultureInfo.InvariantCulture);
+            _remoteControl.Storage.SetValue(MIN_ALTITUDE_STORAGE_ID, minAltitudeString);
+            var maxAltitudeString = MaxAltitude.ToString(CultureInfo.InvariantCulture);
+            _remoteControl.Storage.SetValue(MAX_ALTITUDE_STORAGE_ID, maxAltitudeString);
         }
 
         private void WithSaveSuppressed(Action action)
@@ -188,6 +298,34 @@ namespace Pathfinder
             {
                 _suppressSave = previous;
             }
+        }
+
+        private bool HasDroneMoved(double tolerance)
+        {
+            if (!_lastStartPosition.HasValue || _remoteControl == null)
+            {
+                return false;
+            }
+
+            var currentPosition = _remoteControl.CubeGrid.WorldAABB.Center;
+            var toleranceSquared = tolerance * tolerance;
+            return Vector3D.DistanceSquared(currentPosition, _lastStartPosition.Value) > toleranceSquared;
+        }
+
+        private static bool AreClose(Vector3D? a, Vector3D? b, double tolerance)
+        {
+            if (!a.HasValue && !b.HasValue)
+            {
+                return true;
+            }
+
+            if (!a.HasValue || !b.HasValue)
+            {
+                return false;
+            }
+
+            var toleranceSquared = tolerance * tolerance;
+            return Vector3D.DistanceSquared(a.Value, b.Value) <= toleranceSquared;
         }
 
         public string GetPathPointsString()

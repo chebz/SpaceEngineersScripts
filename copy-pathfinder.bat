@@ -13,10 +13,10 @@ copy "Mods\Pathfinder\Data\Scripts\Pathfinder\Utils.cs" "C:\Users\mikha\AppData\
 copy "Mods\Pathfinder\Data\Scripts\Pathfinder\OctreeAStar\Graph.cs" "C:\Users\mikha\AppData\Roaming\SpaceEngineers\Mods\Pathfinder\Data\Scripts\Pathfinder\OctreeAStar\Graph.cs" >nul
 copy "Mods\Pathfinder\Data\Scripts\Pathfinder\OctreeAStar\Octant.cs" "C:\Users\mikha\AppData\Roaming\SpaceEngineers\Mods\Pathfinder\Data\Scripts\Pathfinder\OctreeAStar\Octant.cs" >nul
 copy "Mods\Pathfinder\Data\Scripts\Pathfinder\OctreeAStar\Path.cs" "C:\Users\mikha\AppData\Roaming\SpaceEngineers\Mods\Pathfinder\Data\Scripts\Pathfinder\OctreeAStar\Path.cs" >nul
-copy "Mods\Pathfinder\Data\Scripts\Pathfinder\OctreeAStar\Edge.cs" "C:\Users\mikha\AppData\Roaming\SpaceEngineers\Mods\Pathfinder\Data\Scripts\Pathfinder\OctreeAStar\Edge.cs" >nul
 copy "Mods\Pathfinder\Data\Scripts\Pathfinder\OctreeAStar\OctreeAStarSettings.cs" "C:\Users\mikha\AppData\Roaming\SpaceEngineers\Mods\Pathfinder\Data\Scripts\Pathfinder\OctreeAStar\OctreeAStarSettings.cs" >nul
 
 REM Copy mod metadata and thumbnail
+copy "Mods\Pathfinder\Data\EntityComponents.sbc" "C:\Users\mikha\AppData\Roaming\SpaceEngineers\Mods\Pathfinder\Data\EntityComponents.sbc" >nul
 copy "Mods\Pathfinder\metadata.mod" "C:\Users\mikha\AppData\Roaming\SpaceEngineers\Mods\Pathfinder\metadata.mod" >nul
 copy "Mods\Pathfinder\Thumb.jpg" "C:\Users\mikha\AppData\Roaming\SpaceEngineers\Mods\Pathfinder\Thumb.jpg" >nul
 
@@ -30,8 +30,8 @@ if %errorlevel% equ 0 (
           echo   - OctreeAStar\Graph.cs
           echo   - OctreeAStar\Octant.cs
           echo   - OctreeAStar\Path.cs
-          echo   - OctreeAStar\Edge.cs
           echo   - OctreeAStar\OctreeAStarSettings.cs
+          echo   - EntityComponents.sbc
           echo   - metadata.mod
           echo   - Thumb.jpg
           echo Completed at %DATE% %TIME%

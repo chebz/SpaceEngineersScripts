@@ -10,6 +10,8 @@ namespace IngameScript
     public interface IProperty
     {
         string Key { get; }
+        bool ShowInCustomData { get; }
+        string Comment { get; }
         void ValueFromString(string valueString);
         string ValueToString();
     }
@@ -20,12 +22,14 @@ namespace IngameScript
         public event Action<T> ValueChanged;
 
         public string Key { get; }
+        public bool ShowInCustomData { get; set; }
+        public string Comment { get; set; }
         public T Value 
         {
             get { return _value; }
             set 
             {
-                if (_value.Equals(value))
+                if (_value != null && _value.Equals(value))
                     return;
 
                 _value = value;
@@ -33,10 +37,12 @@ namespace IngameScript
             }
         }
 
-        protected PropertyBase(string key, T value)
+        protected PropertyBase(string key, T value, bool showInCustomData = true, string comment = null)
         {
             Key = key;
             Value = value;
+            ShowInCustomData = showInCustomData;
+            Comment = comment;
         }
 
         public void ValueFromString(string valueString)
@@ -53,7 +59,8 @@ namespace IngameScript
     {
         private readonly int _precision;
 
-        public DoubleProperty(string key, double value, int precision = 2) : base(key, value)
+        public DoubleProperty(string key, double value, int precision = 2, bool showInCustomData = true, string comment = null)
+            : base(key, value, showInCustomData, comment)
         {
             _precision = precision;
         }
@@ -71,7 +78,8 @@ namespace IngameScript
 
     public class BoolProperty : PropertyBase<bool>
     {
-        public BoolProperty(string key, bool value) : base(key, value)
+        public BoolProperty(string key, bool value, bool showInCustomData = true, string comment = null)
+            : base(key, value, showInCustomData, comment)
         {
         }
         
@@ -90,14 +98,22 @@ namespace IngameScript
     {
         private string _gpsName;
 
-        public GPSProperty(string key, Vector3D value) : base(key, value)
+        public GPSProperty(string key, Vector3D value, string gpsName = null, bool showInCustomData = true, string comment = null)
+            : base(key, value, showInCustomData, comment)
         {
+            _gpsName = string.IsNullOrEmpty(gpsName) ? key : gpsName;
         }
 
         protected override Vector3D StringToValue(string valueString)
         {
+            // if string starts with GPS: then remove the first 4 characters
+            if (valueString.StartsWith("GPS:"))
+            {
+                valueString = valueString.Substring(4);
+            }
+
             var parts = valueString.Split(':');
-            if (parts.Length < 3)
+            if (parts.Length < 4)
             {
                 return Vector3D.Zero;
             }
@@ -114,7 +130,25 @@ namespace IngameScript
 
         public override string ValueToString()
         {
-            return $"{_gpsName}:{Value.X}:{Value.Y}:{Value.Z}";
+            return $"{_gpsName}:{Value.X:F2}:{Value.Y:F2}:{Value.Z:F2}";
+        }
+    }
+
+    public class StringProperty : PropertyBase<string>
+    {
+        public StringProperty(string key, string value, bool showInCustomData = true, string comment = null)
+            : base(key, value, showInCustomData, comment)
+        {
+        }
+
+        protected override string StringToValue(string valueString)
+        {
+            return valueString;
+        }
+
+        public override string ValueToString()
+        {
+            return Value;
         }
     }
 
@@ -134,6 +168,13 @@ namespace IngameScript
             sb.AppendLine($"=== {Name} Start ===");
             foreach (var setting in _properties)
             {
+                if (!setting.ShowInCustomData)
+                    continue;
+
+                if (!string.IsNullOrWhiteSpace(setting.Comment))
+                {
+                    sb.AppendLine($"# {setting.Comment}");
+                }
                 sb.AppendLine($"{setting.Key}: {setting.ValueToString()}");
             }
             sb.AppendLine($"=== {Name} End ===");
@@ -151,7 +192,7 @@ namespace IngameScript
             for (int i = startIdx + 1; i < endIdx; i++)
             {
                 var line = lines[i].Trim();
-                if (string.IsNullOrEmpty(line) || line.StartsWith("==="))
+                if (string.IsNullOrEmpty(line) || line.StartsWith("===") || line.StartsWith("#"))
                     continue;
 
                 var colonIndex = line.IndexOf(':');
@@ -159,10 +200,18 @@ namespace IngameScript
                     continue;
 
                 var key = line.Substring(0, colonIndex).Trim();
-                var value = line.Substring(colonIndex + 1).Trim();
+                var valueSegment = line.Substring(colonIndex + 1).Trim();
+                var hashIndex = valueSegment.IndexOf('#');
+                if (hashIndex != -1)
+                {
+                    valueSegment = valueSegment.Substring(0, hashIndex).Trim();
+                }
+
+                if (string.IsNullOrEmpty(valueSegment))
+                    continue;
 
                 var existingSetting = _properties.FirstOrDefault(s => s.Key == key);
-                existingSetting?.ValueFromString(value);
+                existingSetting?.ValueFromString(valueSegment);
             }
         }
 

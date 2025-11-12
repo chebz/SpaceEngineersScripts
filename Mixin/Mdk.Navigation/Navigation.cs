@@ -23,52 +23,26 @@ namespace IngameScript
 
         public class NavigationSection : Section
         {
-            private Navigation _navigation;
             public BoolProperty FactorGravity { get; } = new BoolProperty("FactorGravity", FACTOR_GRAVITY_DEFAULT);
             public DoubleProperty Accel { get; } = new DoubleProperty("Accel", ACCEL_DEFAULT);
             public DoubleProperty Precision { get; } = new DoubleProperty("Precision", PRECISION_DEFAULT);
-            public DoubleProperty KP { get; } = new DoubleProperty("KP", KP_DEFAULT);
-            public DoubleProperty KI { get; } = new DoubleProperty("KI", KI_DEFAULT);
-            public DoubleProperty KD { get; } = new DoubleProperty("KD", KD_DEFAULT);
+            public DoubleProperty MinVelocity { get; } = new DoubleProperty("MinVelocity", MIN_VELOCITY_DEFAULT);
             
-            public NavigationSection(Navigation navigation) : base("Navigation")
+            public NavigationSection() : base("Navigation")
             {
-                _navigation = navigation;
                 _properties.Add(FactorGravity);
                 _properties.Add(Accel);
                 _properties.Add(Precision);
-                _properties.Add(KP);
-                _properties.Add(KI);
-                _properties.Add(KD);
-                KP.ValueChanged += (value) => {
-                    _navigation.PidX.Kp = value;
-                    _navigation.PidY.Kp = value;
-                    _navigation.PidZ.Kp = value;
-                };
-                KI.ValueChanged += (value) => {
-                    _navigation.PidX.Ki = value;
-                    _navigation.PidY.Ki = value;
-                    _navigation.PidZ.Ki = value;
-                };
-                KD.ValueChanged += (value) => {
-                    _navigation.PidX.Kd = value;
-                    _navigation.PidY.Kd = value;
-                    _navigation.PidZ.Kd = value;
-                };
+                _properties.Add(MinVelocity);
             }
         }
 
 
         #region Fields
-        private const double PID_TIME_STEP_DEFAULT = 1.0 / 6.0;
-
-        // Default Position PID settings
-        private const double KP_DEFAULT = 3.0;
-        private const double KI_DEFAULT = 1.0;
-        private const double KD_DEFAULT = 0.0;
         private const bool FACTOR_GRAVITY_DEFAULT = true;
         private const double ACCEL_DEFAULT = 0.25;
         private const double PRECISION_DEFAULT = 0.1;
+        private const double MIN_VELOCITY_DEFAULT = 1.0;
 
 
         private readonly Dictionary<ThrusterDir, List<IMyThrust>> _thrusters =
@@ -77,14 +51,6 @@ namespace IngameScript
         private Program _program;
         private IMyRemoteControl _remoteControl;
         private NavigationSection _section;
-        #endregion
-
-        #region Properties
-        // Position PID controllers
-        public PID PidX { get; } = new PID(KP_DEFAULT, KI_DEFAULT, KD_DEFAULT, PID_TIME_STEP_DEFAULT);
-        public PID PidY { get; } = new PID(KP_DEFAULT, KI_DEFAULT, KD_DEFAULT, PID_TIME_STEP_DEFAULT);
-        public PID PidZ { get; } = new PID(KP_DEFAULT, KI_DEFAULT, KD_DEFAULT, PID_TIME_STEP_DEFAULT);
-
         #endregion
 
         #region Methods
@@ -99,7 +65,7 @@ namespace IngameScript
                 return false;
             }
 
-            _section = new NavigationSection(this);
+            _section = new NavigationSection();
             customDataConnector.AddSection(_section);
 
             return InitializeThrusters(out errorMessage);
@@ -235,9 +201,6 @@ namespace IngameScript
             {
                 SetThrusterGroupPower(key, 0);
             }
-            PidX.Reset();
-            PidY.Reset();
-            PidZ.Reset();
         }
 
         public void PowerOff()
@@ -256,10 +219,6 @@ namespace IngameScript
             }
         }
 
-        public Vector3D GetCurrentPosition()
-        {
-            return _remoteControl.GetPosition();
-        }
 
         public bool NavigateTo(Vector3D target, double maxSpeed = 20.0, double precision = 0, Vector3D targetSpeed = default(Vector3D))
         {
@@ -284,11 +243,11 @@ namespace IngameScript
             var desiredSpeed = CalculateDesiredSpeedAtPosition(target, maxSpeed);
             var desiredVel = Vector3D.Normalize(toTarget) * desiredSpeed + targetSpeed;
             var velError = desiredVel - vel;
-
-            // --- Step 2: Use PID controllers for velocity control ---
-            // var accelX = PidX.Control(velError.X);
-            // var accelY = PidY.Control(velError.Y);
-            // var accelZ = PidZ.Control(velError.Z);
+            var velErrorLength = velError.Length();
+            if (velErrorLength < _section.MinVelocity.Value)
+            {
+                velError = velError.Normalized() * _section.MinVelocity.Value;
+            }
 
             var accelX = velError.X;
             var accelY = velError.Y;
@@ -309,6 +268,83 @@ namespace IngameScript
             ApplyForce(desiredForce);
 
             return false;
+        }
+
+        public bool OrbitPoint(Vector3D target, double radius, Vector3D upDir, double maxSpeed)
+        {
+            radius = Math.Max(radius, _section.Precision.Value);
+            maxSpeed = Math.Max(maxSpeed, 0.1);
+
+            var position = _remoteControl.GetPosition();
+            var velocity = _remoteControl.GetShipVelocities().LinearVelocity;
+            var gravity = _remoteControl.GetNaturalGravity();
+            var mass = _remoteControl.CalculateShipMass().TotalMass;
+
+            var up = upDir;
+            if (up.LengthSquared() < 1e-6)
+            {
+                up = _remoteControl.WorldMatrix.Up;
+            }
+            up = Vector3D.Normalize(up);
+
+            var offset = position - target;
+            var verticalOffset = Vector3D.Dot(offset, up);
+            var planarOffset = offset - up * verticalOffset;
+            var planarDistance = planarOffset.Length();
+
+            if (planarDistance < 1e-6)
+            {
+                var fallback = Vector3D.Cross(up, _remoteControl.WorldMatrix.Right);
+                if (fallback.LengthSquared() < 1e-6)
+                {
+                    fallback = Vector3D.Cross(up, _remoteControl.WorldMatrix.Forward);
+                }
+                planarOffset = Vector3D.Normalize(fallback) * radius;
+                planarDistance = planarOffset.Length();
+            }
+
+            var planarDir = Vector3D.Normalize(planarOffset);
+            var tangentDir = Vector3D.Normalize(Vector3D.Cross(up, planarDir));
+            if (tangentDir.LengthSquared() < 1e-6)
+            {
+                tangentDir = Vector3D.Cross(planarDir, up);
+                tangentDir = Vector3D.Normalize(tangentDir);
+            }
+
+            var radialError = planarDistance - radius;
+            var desiredVelocity = tangentDir * maxSpeed;
+
+            if (Math.Abs(radialError) > 1e-6)
+            {
+                desiredVelocity += -planarDir * MathHelper.Clamp(radialError, -maxSpeed, maxSpeed);
+            }
+
+            if (Math.Abs(verticalOffset) > 1e-6)
+            {
+                desiredVelocity += -up * MathHelper.Clamp(verticalOffset, -maxSpeed, maxSpeed);
+            }
+
+            var velocityError = desiredVelocity - velocity;
+            var velocityErrorLength = velocityError.Length();
+            if (velocityErrorLength > maxSpeed)
+            {
+                velocityError = velocityError / velocityErrorLength * maxSpeed;
+            }
+
+            var desiredAccel = velocityError;
+
+            if (_section.FactorGravity.Value)
+            {
+                desiredAccel -= gravity;
+            }
+
+            var desiredForce = desiredAccel * mass;
+            ApplyForce(desiredForce);
+
+            var onOrbit =
+                Math.Abs(radialError) < _section.Precision.Value &&
+                Math.Abs(verticalOffset) < _section.Precision.Value;
+            return onOrbit;
         }
 
         private void ApplyForce(Vector3D desiredForce)
@@ -350,6 +386,23 @@ namespace IngameScript
                 thruster.ThrustOverridePercentage = (float)ratio;
             }
         }
+        
+        private double CalculateMaximumAcceleration()
+        {
+            // Find the thruster directionwith the minimum effective thrust
+            var minThrust = double.MaxValue;
+            foreach (var dir in _thrusters.Keys)
+            {
+                var thrust = _thrusters[dir].Sum(t => t.MaxEffectiveThrust);
+                if (thrust < minThrust)
+                {
+                    minThrust = thrust;
+                }
+            }
+            var mass = _remoteControl.CalculateShipMass().TotalMass;
+            var gravMagnitude = _remoteControl.GetNaturalGravity().Length();
+            return minThrust / mass / gravMagnitude;
+        }
 
         private double CalculateDesiredSpeedAtPosition(Vector3D target, double maxSpeed)
         {
@@ -358,7 +411,8 @@ namespace IngameScript
             
             // Correct breaking distance formula: v²/(2a)
             // This gives us the distance needed to stop from maxSpeed
-            var breakingDistance = (maxSpeed * maxSpeed) / (2.0 * _section.Accel.Value);
+            var maxAcceleration = CalculateMaximumAcceleration();
+            var breakingDistance = (maxSpeed * maxSpeed) / (2.0 * maxAcceleration);
             
             if (distance > breakingDistance)
             {

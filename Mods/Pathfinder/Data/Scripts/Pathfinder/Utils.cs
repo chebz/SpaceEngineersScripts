@@ -8,11 +8,56 @@ using VRage.Game.ModAPI;
 using Sandbox.Game.Entities;
 using Sandbox.ModAPI;
 using System;
+using System.Globalization;
+using System.Text;
+using Pathfinder.OctreeAStar;
+using VRage.Game.Entity;
 
 namespace Pathfinder
 {
     public static class Utils
     {
+        #region Logging
+        private const string LOG_FILE_NAME = "Pathfinder.log";
+        private const string APP_VERSION = "1.0.0";
+
+        private static MyLog _log;
+
+        public static void InitializeLog()
+        {
+            if (_log != null)
+            {
+                return;
+            }
+
+            var log = new MyLog();
+            log.Init(LOG_FILE_NAME, new StringBuilder(APP_VERSION));
+            _log = log;
+        }
+
+        public static void ShutdownLog()
+        {
+            if (_log == null)
+            {
+                return;
+            }
+
+            _log.Close();
+            _log = null;
+        }
+
+        public static void Log(MyLogSeverity severity, string format, params object[] args)
+        {
+            if (_log == null)
+            {
+                return;
+            }
+
+            _log.Log(severity, format, args);
+            _log.Flush();
+        }
+        #endregion
+
         #region Debug Render
         private static readonly MyStringId _gizmoDrawLine = MyStringId.GetOrCompute("Square");
         public static void DrawAabb(BoundingBoxD aabb, Color color, bool wireframe, float intensity = 1f, float lineWidth = 0.02f)
@@ -207,6 +252,99 @@ namespace Pathfinder
             dir.Normalize();
             return CardinalDirections.OrderByDescending(d => Vector3D.Dot(d, dir)).Skip(1).First();
         }
+
+        public static Vector3D[] GetBoundingBoxCorners(BoundingBoxD box)
+        {
+            var min = box.Min;
+            var max = box.Max;
+
+            return new[]
+            {
+                new Vector3D(min.X, min.Y, min.Z),
+                new Vector3D(max.X, min.Y, min.Z),
+                new Vector3D(min.X, max.Y, min.Z),
+                new Vector3D(max.X, max.Y, min.Z),
+                new Vector3D(min.X, min.Y, max.Z),
+                new Vector3D(max.X, min.Y, max.Z),
+                new Vector3D(min.X, max.Y, max.Z),
+                new Vector3D(max.X, max.Y, max.Z)
+            };
+        }
+
+        public static Octant.OctantOccupancy GetOccupancy(BoundingBoxD bounds, IMyCubeGrid grid)
+        {
+            var entitiesInNode = new List<MyEntity>();
+            MyGamePruningStructure.GetTopMostEntitiesInBox(ref bounds, entitiesInNode);
+
+            foreach (var entity in entitiesInNode)
+            {
+                if (entity == grid)
+                {
+                    continue;
+                }
+                if (entity is MyPlanet)
+                {
+                    var planet = (MyPlanet)entity;
+                    var corners = GetBoundingBoxCorners(bounds);
+
+                    var totalCorners = corners.Length;
+                    var undergroundCorners = 0;
+
+                    for (int i = 0; i < totalCorners; i++)
+                    {
+                        if (planet.IsUnderGround(corners[i]))
+                        {
+                            undergroundCorners++;
+                        }
+                    }
+
+                    if (undergroundCorners == 0)
+                    {
+                        continue;
+                    }
+                    else if (undergroundCorners == totalCorners)
+                    {
+                        return Octant.OctantOccupancy.Full;
+                    }
+                    else
+                    {
+                        return Octant.OctantOccupancy.PartialInTerrain;
+                    }
+                }
+                
+                var voxelMap = entity as MyVoxelMap;
+                if (voxelMap != null)
+                {
+                    if (bounds.Size.Max() > 100)
+                    {
+                        return Octant.OctantOccupancy.Partial;
+                    }
+                    var vol = voxelMap.GetVoxelContentInBoundingBox_Fast(bounds, MatrixD.Identity);
+                    if (vol.Item2 > 0)
+                    {
+                        return Octant.OctantOccupancy.Partial;
+                    }
+                }
+
+                var cubeGrid = entity as IMyCubeGrid;
+                if (cubeGrid != null)
+                {
+                    var slimBlocks = new List<IMySlimBlock>();
+                    cubeGrid.GetBlocks(slimBlocks);
+
+                    foreach (var slimBlock in slimBlocks)
+                    {
+                        var blockOBB = GetBlockOBB(slimBlock);
+                        var contains = blockOBB.Contains(ref bounds);
+                        if (contains != ContainmentType.Disjoint)
+                        {
+                            return contains == ContainmentType.Contains ? Octant.OctantOccupancy.Full : Octant.OctantOccupancy.Partial;
+                        }
+                    }
+                }
+            }
+            return Octant.OctantOccupancy.Empty;
+        }
         #endregion
 
         #region GPS
@@ -251,10 +389,44 @@ namespace Pathfinder
                 return null;
             }
             double x, y, z;
-            if (!double.TryParse(parts[0], out x) || !double.TryParse(parts[1], out y) || !double.TryParse(parts[2], out z))
+            if (!double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out x) ||
+                !double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out y) ||
+                !double.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out z))
             {
                 return null;
             }
+            return new Vector3D(x, y, z);
+        }
+
+        public static Vector3D? ParseGpsString(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return null;
+            }
+
+            var trimmed = value.Trim();
+            if (!trimmed.StartsWith("GPS:", StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            var parts = trimmed.Split(':');
+            if (parts.Length < 5)
+            {
+                return null;
+            }
+
+            double x;
+            double y;
+            double z;
+            if (!double.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out x) ||
+                !double.TryParse(parts[3], NumberStyles.Float, CultureInfo.InvariantCulture, out y) ||
+                !double.TryParse(parts[4], NumberStyles.Float, CultureInfo.InvariantCulture, out z))
+            {
+                return null;
+            }
+
             return new Vector3D(x, y, z);
         }
 

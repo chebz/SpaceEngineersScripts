@@ -1,16 +1,33 @@
 using Sandbox.ModAPI.Ingame;
 using System;
-using System.Collections.Generic;
-using System.Runtime.InteropServices;
 using VRageMath;
 
 namespace IngameScript
 {
     public class AutoDockDrone : Context
     {
+        private class AutoDockDroneSection : Section
+        {
+            public DoubleProperty ConnectorOffset { get; } = new DoubleProperty("ConnectorOffset", CONNECTOR_OFFSET_DEFAULT);
+            public DoubleProperty ApproachSpeed { get; } = new DoubleProperty("ApproachSpeed", APPROACH_SPEED_DEFAULT);
+            public DoubleProperty DockingSpeed { get; } = new DoubleProperty("DockingSpeed", DOCKING_SPEED_DEFAULT);
+            public DoubleProperty CorrectedApproachDistance { get; } = new DoubleProperty("CorrectedApproachDistance", CORRECTED_APPROACH_DISTANCE_DEFAULT);
+
+            public AutoDockDroneSection() : base("AutoDockDrone")
+            {
+                _properties.Add(ConnectorOffset);
+                _properties.Add(ApproachSpeed);
+                _properties.Add(DockingSpeed);
+                _properties.Add(CorrectedApproachDistance);
+            }
+        }
+
         #region Constants
         private const string BROADCAST_TAG = "AutoDock";
-        private const double CONNECTOR_OFFSET = 1.1;
+        private const double CONNECTOR_OFFSET_DEFAULT = 1.1;
+        private const double APPROACH_SPEED_DEFAULT = 20.0;
+        private const double DOCKING_SPEED_DEFAULT = 2.0;
+        private const double CORRECTED_APPROACH_DISTANCE_DEFAULT = 10.0;
         #endregion
 
         #region Fields
@@ -20,20 +37,22 @@ namespace IngameScript
         private Alignment _alignment;
         private IMyShipConnector _connector;
         private IMyRemoteControl _remoteControl;
-        private PathfindingNavigation _pathfinderNavigation;
         private IMyBroadcastListener _broadcastListener;
         private IMyUnicastListener _unicastListener;
         private long _stationPbId;
+        private string _requestedConnectorName = "*";
+        private AutoDockDroneSection _section;
+        private Action _onDocked;
+        private Action _onUndocked;
         #endregion
 
         #region Methods
 
-        public bool Initialize(Program program, Navigation navigation, Alignment alignment, PathfindingNavigation pathfinderNavigation, out string errorMessage)
+        public bool Initialize(Program program, CustomDataConnector customDataConnector, Navigation navigation, Alignment alignment, PathfindingNavigation pathfinderNavigation, out string errorMessage)
         {
             _program = program;
             _navigation = navigation;
             _alignment = alignment;
-            _pathfinderNavigation = pathfinderNavigation;
             errorMessage = string.Empty;
 
             _remoteControl = program.GetLocalBlock<IMyRemoteControl>();
@@ -51,6 +70,9 @@ namespace IngameScript
             }
 
             _connector = connectors[0];
+
+            _section = new AutoDockDroneSection();
+            customDataConnector.AddSection(_section);
 
             _broadcastListener = program.IGC.RegisterBroadcastListener(BROADCAST_TAG);
             _broadcastListener.SetMessageCallback(BROADCAST_TAG);
@@ -71,17 +93,60 @@ namespace IngameScript
             return true;
         }
 
+        public void SetDockedCallback(Action onDocked)
+        {
+            _onDocked = CombineCallbacks(_onDocked, onDocked);
+        }
+
+        public void SetUndockedCallback(Action onUndocked)
+        {
+            _onUndocked = CombineCallbacks(_onUndocked, onUndocked);
+        }
+
         public override void Execute()
         {
             if (!_initialized)
             {
-                _program.Echo("Error: AutoDockDrone not initialized");
                 return;
             }
 
             HandleMessages();
-            _pathfinderNavigation.Execute();
             base.Execute();
+        }
+
+        private Action CombineCallbacks(Action existing, Action additional)
+        {
+            if (additional == null)
+            {
+                return existing;
+            }
+
+            if (existing == null)
+            {
+                return additional;
+            }
+
+            return delegate
+            {
+                existing();
+                additional();
+            };
+        }
+
+        private void InvokeDocked()
+        {
+            if (_onDocked != null)
+            {
+                _onDocked();
+            }
+        }
+
+        private void InvokeUndocked()
+        {
+            if (_onUndocked != null)
+            {
+                _onUndocked();
+            }
         }
 
         private void HandleMessages()
@@ -120,36 +185,49 @@ namespace IngameScript
             }
         }
 
-        public void DockToNearest()
+        private string NormalizeConnectorName(string connectorName)
+        {
+            if (string.IsNullOrWhiteSpace(connectorName))
+            {
+                return "*";
+            }
+
+            return connectorName;
+        }
+
+        public void DockToNearest(string connectorName)
         {
             if (!_initialized)
             {
-                _program.Echo("Error: AutoDockDrone not initialized");
+                _program.Echo("Cannot dock - not initialized");
                 return;
             }
 
             if (!(CurrentState is UndockedState))
             {
+                _program.Echo($"Cannot dock - in state {CurrentState.GetType().Name}");
                 return;
             }
 
+            _requestedConnectorName = NormalizeConnectorName(connectorName);
             TransitionTo(new RequestingApproachState(this, 0, true));
         }
 
-        public void DockToStation(long stationPbId)
+        public void DockToStation(long stationPbId, string connectorName)
         {
             if (!_initialized)
             {
-                _program.Echo("Error: AutoDockDrone not initialized");
                 return;
             }
 
             if (CurrentState is UndockedState)
             {
+                _requestedConnectorName = NormalizeConnectorName(connectorName);
                 TransitionTo(new RequestingApproachState(this, stationPbId, false));
             }
             else if (CurrentState is DockedState)
             {
+                _requestedConnectorName = NormalizeConnectorName(connectorName);
                 TransitionTo(new UndockingState(this, stationPbId));
             }
             else
@@ -162,11 +240,11 @@ namespace IngameScript
         {
             if (!_initialized)
             {
-                _program.Echo("Error: AutoDockDrone not initialized");
                 return;
             }
 
-            _pathfinderNavigation.Stop();
+            _navigation.Stop();
+            _alignment.Stop();
 
             if (_connector.IsConnected)
             {
@@ -182,7 +260,6 @@ namespace IngameScript
         {
             if (!_initialized)
             {
-                _program.Echo("Error: AutoDockDrone not initialized");
                 return;
             }
 
@@ -227,6 +304,7 @@ namespace IngameScript
             {
                 _context._navigation.Stop();
                 _context._alignment.Stop();
+                _context.InvokeUndocked();
 
                 if (_nextStationPbId != 0)
                 {
@@ -246,10 +324,10 @@ namespace IngameScript
 
             public override void Enter()
             {
-                _context._pathfinderNavigation.Stop();
                 _context._navigation.Stop();
                 _context._alignment.Stop();
                 _context._navigation.PowerOff();
+                _context.InvokeDocked();
             }
 
             public override void Execute()
@@ -272,7 +350,7 @@ namespace IngameScript
             {
                 _context._program.Echo("Requesting approach");
                 var droneName = _context._program.Me.CubeGrid.CustomName;
-                var message = $"requestdocking|{droneName}";
+                var message = $"requestdocking|{droneName}|{_context._requestedConnectorName}";
                 
                 if (_isBroadcast)
                 {
@@ -299,17 +377,12 @@ namespace IngameScript
                         var y = double.Parse(parts[2]);
                         var z = double.Parse(parts[3]);
                         var approachPos = new Vector3D(x, y, z);
+                        var vx = double.Parse(parts[4]);
+                        var vy = double.Parse(parts[5]);
+                        var vz = double.Parse(parts[6]);
+                        var stationVelocity = new Vector3D(vx, vy, vz);
 
-                        Vector3D stationVelocity = Vector3D.Zero;
-                        if (parts.Length >= 7)
-                        {
-                            var vx = double.Parse(parts[4]);
-                            var vy = double.Parse(parts[5]);
-                            var vz = double.Parse(parts[6]);
-                            stationVelocity = new Vector3D(vx, vy, vz);
-                        }
-
-                        _context.TransitionTo(new NavigatingToApproachState(_context, approachPos, source, stationVelocity));
+                        _context.TransitionTo(new NavigatingToApproachState(_context, approachPos, stationVelocity, source));
                     }
                 }
                 else if (message == "nodocksavailable")
@@ -325,33 +398,27 @@ namespace IngameScript
             private Vector3D _approachPosition;
             private Vector3D _stationVelocity;
 
-            public NavigatingToApproachState(AutoDockDrone context, Vector3D approachPosition, long stationPbId, Vector3D stationVelocity) : base(context)
+            public NavigatingToApproachState(AutoDockDrone context, Vector3D approachPosition, Vector3D stationVelocity, long stationPbId) : base(context)
             {
                 _approachPosition = approachPosition;
-                _context._stationPbId = stationPbId;
                 _stationVelocity = stationVelocity;
+                _context._stationPbId = stationPbId;
             }
 
             public override void Enter()
             {
                 _context._program.Echo("Navigating to approach position");
-                _context._pathfinderNavigation.NavigateTo(_approachPosition, 20.0, 1.0, _stationVelocity);
             }
 
             public override void Execute()
             {
-                var navigationState = _context._pathfinderNavigation.GetNavigationState();
-                
-                if (navigationState == NavigationWithCollisionAvoidance.NavigationState.Stuck)
+                if (!_context._navigation.NavigateTo(_approachPosition, _context._section.ApproachSpeed.Value, 1, _stationVelocity))
                 {
-                    _context._program.Echo("Navigation stuck - aborting docking");
-                    _context.TransitionTo(new UndockedState(_context));
+                    return;
                 }
-                else if (navigationState == NavigationWithCollisionAvoidance.NavigationState.Idle)
-                {
-                    _context._program.Echo("Reached approach position");
-                    _context.TransitionTo(new RequestingDockCoordState(_context));
-                }
+
+                _context._program.Echo("Reached approach position");
+                _context.TransitionTo(new RequestingDockCoordState(_context));
             }
 
             public override void HandleMessage(string message, long source)
@@ -365,13 +432,6 @@ namespace IngameScript
                         var y = double.Parse(parts[2]);
                         var z = double.Parse(parts[3]);
                         _approachPosition = new Vector3D(x, y, z);
-
-                        var vx = double.Parse(parts[4]);
-                        var vy = double.Parse(parts[5]);
-                        var vz = double.Parse(parts[6]);
-                        _stationVelocity = new Vector3D(vx, vy, vz);
-
-                        _context._navigationWithCollisionAvoidance.NavigateTo(_approachPosition, 20.0, 1.0, _stationVelocity);
                     }
                 }
             }
@@ -379,9 +439,7 @@ namespace IngameScript
 
         private class RequestingDockCoordState : State<AutoDockDrone>
         {
-            public RequestingDockCoordState(AutoDockDrone context) : base(context)
-            {
-            }
+            public RequestingDockCoordState(AutoDockDrone context) : base(context) { }
 
             public override void Enter()
             {
@@ -429,20 +487,18 @@ namespace IngameScript
 
         private class DockingState : State<AutoDockDrone>
         {
-            private const double APPROACH_CONE_ANGLE_DEG = 45.0;
-            private const double ALIGNMENT_WAIT_THRESHOLD_DEG = 30.0;
+            private Vector3D _correctedApproachPosition;
             private MatrixD _stationConnectorMatrix;
             private Vector3D _stationVelocity;
             private Vector3D _localOffset;
             private QuaternionD _connectorToRemoteRotation;
-            private bool _aligning;
-
+            private bool _correctedApproach;
+            private bool _alignedWithDock;
 
             public DockingState(AutoDockDrone context, MatrixD stationConnectorMatrix, Vector3D stationVelocity) : base(context)
             {
                 _stationConnectorMatrix = stationConnectorMatrix;
                 _stationVelocity = stationVelocity;
-                _aligning = false;
                 
                 var remotePos = context._remoteControl.GetPosition();
                 var connectorPos = context._connector.GetPosition();
@@ -456,27 +512,10 @@ namespace IngameScript
                 
                 var worldOffset = remotePos - connectorPos;
                 _localOffset = Vector3D.TransformNormal(worldOffset, MatrixD.Transpose(connectorMatrix));
+                
+                var targetMatrix = CalculateTargetMatrix();
+                _correctedApproachPosition = targetMatrix.Translation + (stationConnectorMatrix.Forward * context._section.CorrectedApproachDistance.Value);
             }
-
-            private MatrixD CalculateTargetMatrix()
-            {
-                var targetShipConnectorMatrix = MatrixD.CreateWorld(
-                    _stationConnectorMatrix.Translation,
-                    -_stationConnectorMatrix.Forward,
-                    _stationConnectorMatrix.Up
-                );
-                
-                var targetShipConnectorQuat = QuaternionD.CreateFromRotationMatrix(targetShipConnectorMatrix);
-                var targetRemoteQuat = targetShipConnectorQuat * _connectorToRemoteRotation;
-                
-                var targetRemoteMatrix = MatrixD.CreateFromQuaternion(targetRemoteQuat);
-                
-                var offsetInWorldSpace = Vector3D.TransformNormal(_localOffset, targetShipConnectorMatrix);
-                targetRemoteMatrix.Translation = _stationConnectorMatrix.Translation + offsetInWorldSpace + (_stationConnectorMatrix.Forward * CONNECTOR_OFFSET);
-                
-                return targetRemoteMatrix;
-            }
-
             public override void Enter()
             {
                 _context._program.Echo("Docking State");
@@ -491,57 +530,26 @@ namespace IngameScript
                     return;
                 }
 
-                // Check if we're still within the approach cone
-                var currentPos = _context._remoteControl.GetPosition();
-                var connectorPos = _stationConnectorMatrix.Translation;
-                
-                // Ideal approach vector points toward the connector (negative of connector's forward)
-                var idealApproachVector = -_stationConnectorMatrix.Forward;
-                
-                // Actual vector: from current position to connector
-                var actualVector = Vector3D.Normalize(connectorPos - currentPos);
-                
-                // Calculate angle between vectors
-                var dotProduct = Vector3D.Dot(idealApproachVector, actualVector);
-                var angleDeg = Math.Acos(MathHelper.Clamp(dotProduct, -1.0, 1.0)) * (180.0 / Math.PI);
-                
-                if (angleDeg > APPROACH_CONE_ANGLE_DEG)
-                {
-                    _context._program.Echo($"Outside approach cone ({angleDeg:F1}°), re-requesting approach");
-                    _context.TransitionTo(new RequestingApproachState(_context, _context._stationPbId, false));
-                    return;
-                }
-
                 var targetMatrix = CalculateTargetMatrix();
                 
-                if (!_aligning)
-                {
-                    // Check alignment delta to decide if we should pause for alignment
-                    var currentMatrix = _context._remoteControl.WorldMatrix;
-                    var currentQuat = QuaternionD.CreateFromRotationMatrix(currentMatrix);
-                    var targetQuat = QuaternionD.CreateFromRotationMatrix(targetMatrix);
-                    
-                    // Calculate rotation difference
-                    var deltaQuat = QuaternionD.Inverse(currentQuat) * targetQuat;
-                    double angle;
-                    Vector3D axis;
-                    deltaQuat.GetAxisAngle(out axis, out angle);
-                    var alignmentAngleDeg = Math.Abs(angle) * (180.0 / Math.PI);
-                    
-                    // Manage alignment state
-                    if (alignmentAngleDeg > ALIGNMENT_WAIT_THRESHOLD_DEG)
-                    {
-                        _aligning = true;
-                        _context._navigation.Stop();
-                    }
-                }
-                else if (_context._alignment.AlignWithWorldMatrix(targetMatrix))
-                {
-                    _aligning = false;
-                }
 
-                _context._alignment.AlignWithWorldMatrix(targetMatrix);
-                _context._navigation.NavigateTo(targetMatrix.Translation, 2.0, 0.1, _stationVelocity);
+                if (!_alignedWithDock)
+                {
+                    if (!_context._alignment.AlignWithWorldMatrix(targetMatrix))
+                    {
+                        return;
+                    }
+                    _alignedWithDock = true;
+                }
+                if (!_correctedApproach)
+                {
+                    if (!_context._navigation.NavigateTo(_correctedApproachPosition, _context._section.DockingSpeed.Value, 0.1, _stationVelocity))
+                    {
+                        return;
+                    }
+                    _correctedApproach = true;
+                }
+                _context._navigation.NavigateTo(targetMatrix.Translation, _context._section.DockingSpeed.Value, 0.1, _stationVelocity);
             }
 
             public override void HandleMessage(string message, long source)
@@ -566,6 +574,26 @@ namespace IngameScript
                     }
                 }
             }
+
+            private MatrixD CalculateTargetMatrix()
+            {
+                var targetShipConnectorMatrix = MatrixD.CreateWorld(
+                    _stationConnectorMatrix.Translation,
+                    -_stationConnectorMatrix.Forward,
+                    _stationConnectorMatrix.Up
+                );
+                
+                var targetShipConnectorQuat = QuaternionD.CreateFromRotationMatrix(targetShipConnectorMatrix);
+                var targetRemoteQuat = targetShipConnectorQuat * _connectorToRemoteRotation;
+                
+                var targetRemoteMatrix = MatrixD.CreateFromQuaternion(targetRemoteQuat);
+                
+                var offsetInWorldSpace = Vector3D.TransformNormal(_localOffset, targetShipConnectorMatrix);
+                targetRemoteMatrix.Translation = _stationConnectorMatrix.Translation + offsetInWorldSpace + (_stationConnectorMatrix.Forward * _context._section.ConnectorOffset.Value);
+                
+                return targetRemoteMatrix;
+            }
+
         }
 
         private class UndockingState : State<AutoDockDrone>

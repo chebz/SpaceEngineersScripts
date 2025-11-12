@@ -2,12 +2,12 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "build-mp_base",
+            "label": "build-add",
             "type": "shell",
             "command": "dotnet",
             "args": [
                 "build",
-                "Scripts/ModularPrinter/ModularPrinter.sln",
+                "Scripts/AutoDockDrone/AutoDockDrone.sln",
                 "--configuration",
                 "Debug"
             ],
@@ -22,15 +22,15 @@
                 "panel": "shared"
             },
             "problemMatcher": "$msCompile",
-            "detail": "Build the ModularPrinter base Space Engineers script"
+            "detail": "Build the AutoDockDrone Space Engineers script"
         },
         {
-            "label": "build-mpp_1",
+            "label": "build-ads",
             "type": "shell",
             "command": "dotnet",
             "args": [
                 "build",
-                "Scripts/ModularPrinterPart1/ModularPrinterPart1.sln",
+                "Scripts/AutoDockStation/AutoDockStation.sln",
                 "--configuration",
                 "Debug"
             ],
@@ -45,15 +45,15 @@
                 "panel": "shared"
             },
             "problemMatcher": "$msCompile",
-            "detail": "Build the ModularPrinterPart1 Space Engineers script"
+            "detail": "Build the AutoDockStation Space Engineers script"
         },
         {
-            "label": "build-mpp_2",
+            "label": "build-pf_nav",
             "type": "shell",
             "command": "dotnet",
             "args": [
                 "build",
-                "Scripts/ModularPrinterPart2/ModularPrinterPart2.sln",
+                "Scripts/PathfinderNavigation/PathfinderNavigation.sln",
                 "--configuration",
                 "Debug"
             ],
@@ -68,28 +68,7 @@
                 "panel": "shared"
             },
             "problemMatcher": "$msCompile",
-            "detail": "Build the ModularPrinterPart2 Space Engineers script"
-        },
-        {
-            "label": "build-mp_all",
-            "dependsOrder": "sequence",
-            "dependsOn": [
-                "build-mp_base",
-                "build-mpp_1",
-                "build-mpp_2"
-            ],
-            "group": {
-                "kind": "build",
-                "isDefault": true
-            },
-            "presentation": {
-                "echo": true,
-                "reveal": "always",
-                "focus": false,
-                "panel": "shared"
-            },
-            "problemMatcher": "$msCompile",
-            "detail": "Build all ModularPrinter Space Engineers scripts"
+            "detail": "Build the PathfinderNavigation Space Engineers script"
         },
         {
             "label": "copy-toolinfo",
@@ -152,6 +131,52 @@
             },
             "problemMatcher": "$msCompile",
             "detail": "Build the TestPathfinding Space Engineers script"
+        },
+        {
+            "label": "build-test_orbit",
+            "type": "shell",
+            "command": "dotnet",
+            "args": [
+                "build",
+                "Scripts/TestOrbitNavigation/TestOrbitNavigation.sln",
+                "--configuration",
+                "Debug"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "problemMatcher": "$msCompile",
+            "detail": "Build the TestOrbitNavigation Space Engineers script"
+        },
+        {
+            "label": "build-spiral_miner",
+            "type": "shell",
+            "command": "dotnet",
+            "args": [
+                "build",
+                "Scripts/SpiralMiner/SpiralMiner.sln",
+                "--configuration",
+                "Debug"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "problemMatcher": "$msCompile",
+            "detail": "Build the SpiralMiner Space Engineers script"
         },
         {
             "label": "copy-pathfinder",

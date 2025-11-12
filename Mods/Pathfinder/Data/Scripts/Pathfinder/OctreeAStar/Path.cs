@@ -17,11 +17,12 @@ namespace Pathfinder.OctreeAStar
 
         public void Render()
         {
+            var thickness = OctreeAStarSettings.Instance.PathRenderThickness;
             for (var i = 0; i < points.Count - 1; i++)
             {
                 var start = points[i];
                 var end = points[i + 1];
-                Utils.DrawLine(start, end, Color.Cyan, 0.2f);
+                Utils.DrawLine(start, end, Color.Cyan, thickness);
             }
 
             foreach (var point in points)

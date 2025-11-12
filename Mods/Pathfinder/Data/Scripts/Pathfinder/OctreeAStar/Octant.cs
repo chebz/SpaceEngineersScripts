@@ -5,7 +5,9 @@ using VRage.Game.ModAPI;
 using VRage.Game.Entity;
 using Sandbox.Game.Entities;
 using Sandbox.ModAPI;
+using Sandbox.Game.GameSystems;
 using System;
+using VRage.Utils;
 
 namespace Pathfinder.OctreeAStar
 {
@@ -17,6 +19,7 @@ namespace Pathfinder.OctreeAStar
             Unknown,
             Empty,
             Partial,
+            PartialInTerrain,
             Full
         }
         #endregion
@@ -39,19 +42,72 @@ namespace Pathfinder.OctreeAStar
         public readonly double size;
         public OctantState state = OctantState.Unexplored;
         public OctantOccupancy occupancy = OctantOccupancy.Unknown;
+        public double altitude = 0.0;
         public double g;
         public double h = -1;
         public Octant parent;
         public Octant from;
         public bool isReverse;
         public bool isMeet;
-        //public readonly List<Edge> edges = new List<Edge>();
+        public bool isPartialInTerrain = false;
         public readonly List<Octant> children = new List<Octant>();
         #endregion
 
         #region Properties
-        public double ExploreCost => Math.Max(0, _graph.maxRootSize - size);
-        public double F => g * _graph.gFactor + h + ExploreCost * _graph.exploreCostFactor;
+        
+        public double ExploreCostInTerrain
+        {
+            get
+            {
+                if (!isPartialInTerrain)
+                {
+                    return 1;
+                }
+                return _graph.exploreCostFactorInTerrain;
+            }
+        }
+        
+        public double ExploreCost => Math.Max(0, _graph.maxRootSize - size) * _graph.exploreCostFactor * ExploreCostInTerrain;
+        public double AltitudeCost 
+        {
+            get
+            {
+                var min = _graph.MinAltitude;
+                var max = _graph.MaxAltitude;
+                var useMin = min > 0;
+                var useMax = max > 0 && (min <= 0 || max > min);
+                if (!useMin && !useMax)
+                {
+                    return 0;
+                }
+                if (altitude == 0)
+                {
+                    CalculateAltitude();
+                }
+                if (altitude == double.PositiveInfinity)
+                {
+                    return 0;
+                }
+                double deviation = 0;
+                if (useMin && altitude < min)
+                {
+                    deviation += min - altitude;
+                }
+                if (useMax && altitude > max)
+                {
+                    deviation += altitude - max;
+                }
+                if (deviation <= 0)
+                {
+                    return 0;
+                }
+                var cost = deviation * _graph.altitudeCostFactor;
+                // Utils.Log(MyLogSeverity.Info, "Pathfinder: {0}", $"AltitudeCost: {cost}");
+                return cost;
+            }
+        }
+
+        public double F => g * _graph.gFactor + h + ExploreCost + AltitudeCost;
 
         public bool IsRoot => parent == null;
         public bool IsLeaf => children.Count == 0;
@@ -81,77 +137,66 @@ namespace Pathfinder.OctreeAStar
             {
                 return;
             }
-            if (bounds.Contains(_graph.Start) == ContainmentType.Contains || bounds.Contains(_graph.End) == ContainmentType.Contains)
+            if (size <= _graph.AgentSize &&
+                (bounds.Contains(_graph.Start) == ContainmentType.Contains))
             {
                 occupancy = OctantOccupancy.Empty;
                 return;
             }
 
+            occupancy = OctantOccupancy.Empty;
             _graph.IncrementExploreCount();
 
-            Utils.StartCallFrame("Explore");
-            var entitiesInNode = new List<MyEntity>();
-            MyGamePruningStructure.GetTopMostEntitiesInBox(ref bounds, entitiesInNode);
-
-            foreach (var entity in entitiesInNode)
+            if (size > _graph.maxRootSize)
             {
-                if (entity == _graph.OwnGrid)
-                {
-                    continue;
-                }
-                if (size > 100)
-                {
-                    occupancy = OctantOccupancy.Partial;
-                    break;
-                }
-                var voxelMap = entity as MyVoxelMap;
-                if (voxelMap != null)
-                {
-                    
-                    var vol = voxelMap.GetVoxelContentInBoundingBox_Fast(bounds, MatrixD.Identity);
-                    if (vol.Item2 > 0)
-                    {
-                        occupancy = OctantOccupancy.Partial;
-                        break;
-                    }
-                }
-
-                var cubeGrid = entity as IMyCubeGrid;
-                if (cubeGrid != null)
-                {
-                    var slimBlocks = new List<IMySlimBlock>();
-                    cubeGrid.GetBlocks(slimBlocks);
-
-                    foreach (var slimBlock in slimBlocks)
-                    {
-                        var blockOBB = Utils.GetBlockOBB(slimBlock);
-                        var contains = blockOBB.Contains(ref bounds);
-                        if (contains != ContainmentType.Disjoint)
-                        {
-                            occupancy = contains == ContainmentType.Contains ? OctantOccupancy.Full : OctantOccupancy.Partial;
-                            break;
-                        }
-                    }
-                }
+                occupancy = OctantOccupancy.Partial;
             }
-            Utils.EndCallFrame("Explore");
-
-            if (occupancy == OctantOccupancy.Partial)
+            else
             {
-                if (Subdivide())
+                occupancy = Utils.GetOccupancy(bounds, _graph.OwnGrid);
+            }
+
+            if (occupancy == OctantOccupancy.Partial || occupancy == OctantOccupancy.PartialInTerrain)
+            {
+                if (Subdivide(occupancy == OctantOccupancy.PartialInTerrain))
                 {
                     occupancy = OctantOccupancy.Partial;
-                    //Root.RecomputeEdges();
                     return;
                 }
                 occupancy = OctantOccupancy.Full;
                 return;
             }
 
-            occupancy = OctantOccupancy.Empty;
         }
 
-        public bool Subdivide()
+        void CalculateAltitude()
+        {
+            MyPlanet closestPlanet = MyGamePruningStructure.GetClosestPlanet(ref bounds);
+            if (closestPlanet == null)
+            {
+                altitude = double.PositiveInfinity;
+                return;
+            }
+            altitude = (bounds.Center - closestPlanet.PositionComp.GetPosition()).Length() - (double)closestPlanet.AverageRadius;
+        }
+
+        public void SubdivideToMaxSize()
+        {
+            if (size <= _graph.maxRootSize)
+            {
+                return;
+            }
+            if (IsLeaf)
+            {
+                Subdivide(false);
+            }
+            foreach (var child in children)
+            {
+                child.SubdivideToMaxSize();
+            }
+        }
+
+        public bool Subdivide(bool isPartialInTerrain = false)
         {
             if (size <= _graph.AgentSize)
             {
@@ -162,7 +207,6 @@ namespace Pathfinder.OctreeAStar
                 return false;
             }
 
-            Utils.StartCallFrame("Subdivide");
             var newSize = bounds.Size * 0.5;
             var centerOffset = bounds.Size * 0.25;
             var parentCenter = bounds.Center;
@@ -176,7 +220,8 @@ namespace Pathfinder.OctreeAStar
                 var childBounds = new BoundingBoxD(childCenter - newSize * 0.5, childCenter + newSize * 0.5);
                 var childOctant = new Octant(childBounds, _graph, this)
                 {
-                    isReverse = isReverse
+                    isReverse = isReverse,
+                    isPartialInTerrain = isPartialInTerrain
                 };
                 children.Add(childOctant);
             }
@@ -189,7 +234,6 @@ namespace Pathfinder.OctreeAStar
                         neighbor.occupancy == OctantOccupancy.Empty &&
                         child.state == OctantState.Unexplored)
                     {
-                        MyAPIGateway.Utilities.ShowMessage("Pathfinder", $"1");
                         child.g = neighbor.g + Vector3D.Distance(child.bounds.Center, neighbor.bounds.Center);
                         child.from = neighbor;
                         child.state = OctantState.Open;
@@ -201,7 +245,6 @@ namespace Pathfinder.OctreeAStar
                              child.occupancy == OctantOccupancy.Empty &&
                              neighbor.state == OctantState.Unexplored)
                     {
-                        MyAPIGateway.Utilities.ShowMessage("Pathfinder", $"2");
                         neighbor.g = child.g + Vector3D.Distance(child.bounds.Center, neighbor.bounds.Center);
                         neighbor.from = child;
                         neighbor.state = OctantState.Open;
@@ -211,7 +254,6 @@ namespace Pathfinder.OctreeAStar
                     }
                 }
             }
-            Utils.EndCallFrame("Subdivide");
             return true;
         }
 
@@ -299,79 +341,6 @@ namespace Pathfinder.OctreeAStar
                 child.GetIntersectingOctants(p0, p1, ref octants);
             }
         }
-
-        // public void RecomputeEdges()
-        // {
-        //     edges.Clear();
-
-        //     if (size > _graph.maxRootSize && IsLeaf)
-        //     {
-        //         Subdivide();
-        //     }
-
-        //     foreach (var child in children)
-        //     {
-        //         child.RecomputeEdges();
-        //     }
-
-        //     if (IsRoot || !IsLeaf)
-        //     {
-        //         return;
-        //     }
-
-        //     if (occupancy == OctantOccupancy.Full)
-        //     {
-        //         return;
-        //     }
-
-        //     Utils.StartCallFrame("RecomputeEdges");
-        //     foreach (var direction in Utils.CardinalDirections)
-        //     {
-        //         Utils.StartCallFrame("RecomputeEdges1");
-        //         var neighborBounds = new BoundingBoxD(bounds.Center + direction * size - bounds.Size * 0.5, 
-        //                                              bounds.Center + direction * size + bounds.Size * 0.5);
-        //         Utils.EndCallFrame("RecomputeEdges1");
-        //         Utils.StartCallFrame("RecomputeEdges2");
-        //         var leafs = new List<Octant>();
-        //         Root.GetLeafs(neighborBounds, ref leafs);
-        //         Utils.EndCallFrame("RecomputeEdges2");
-        //         if (leafs.Count != 1)
-        //         {
-        //             continue;
-        //         }
-        //         var neighbor = leafs[0];
-        //         Utils.StartCallFrame("RecomputeEdges3");
-        //         if (neighbor != this)
-        //         {
-        //             edges.Add(new Edge(this, neighbor));
-
-        //             if (neighbor.state == OctantState.Closed &&
-        //                 neighbor.occupancy == OctantOccupancy.Empty &&
-        //                 state == OctantState.Unexplored)
-        //             {
-        //                 g = neighbor.g + Vector3D.Distance(bounds.Center, neighbor.bounds.Center);
-        //                 from = neighbor;
-        //                 state = OctantState.Open;
-        //                 isReverse = neighbor.isReverse;
-        //                 var open = neighbor.isReverse ? _graph.OpenReverse : _graph.Open;
-        //                 open.Add(this);
-        //             }
-        //             else if (state == OctantState.Closed &&
-        //                      occupancy == OctantOccupancy.Empty &&
-        //                      neighbor.state == OctantState.Unexplored)
-        //             {
-        //                 neighbor.g = g + Vector3D.Distance(bounds.Center, neighbor.bounds.Center);
-        //                 neighbor.from = this;
-        //                 neighbor.state = OctantState.Open;
-        //                 neighbor.isReverse = isReverse;
-        //                 var open = isReverse ? _graph.OpenReverse : _graph.Open;
-        //                 open.Add(neighbor);
-        //             }
-        //         }
-        //         Utils.EndCallFrame("RecomputeEdges3");
-        //     }
-        //     Utils.EndCallFrame("RecomputeEdges");
-        // }
 
         public void GetAllOctants(ref List<Octant> octants)
         {

@@ -18,7 +18,8 @@ namespace IngameScript
         private bool _initialized = false;
         private Program _program;
         private IMyRemoteControl _remoteControl;
-        private List<ConnectorInfo> _connectors = new List<ConnectorInfo>();
+        private List<ConnectorInfo> _allConnectors = new List<ConnectorInfo>();
+        private Dictionary<string, List<ConnectorInfo>> _connectorsByKey = new Dictionary<string, List<ConnectorInfo>>(StringComparer.OrdinalIgnoreCase);
         private Dictionary<long, DateTime> _reservationStatusChecks;
         private IMyBroadcastListener _broadcastListener;
         private IMyUnicastListener _unicastListener;
@@ -59,11 +60,11 @@ namespace IngameScript
 
             var allConnectors = new List<IMyShipConnector>();
             
-            var connectorsByName = program.GetLocalBlocksNameContains<IMyShipConnector>("[AD]");
+            var connectorsByName = program.GetLocalBlocksNameContains<IMyShipConnector>("[AD:");
             allConnectors.AddRange(connectorsByName);
             
             var groups = new List<IMyBlockGroup>();
-            program.GridTerminalSystem.GetBlockGroups(groups, g => g.Name.Contains("[AD]"));
+            program.GridTerminalSystem.GetBlockGroups(groups, g => g.Name.Contains("[AD:"));
             foreach (var group in groups)
             {
                 var groupConnectors = new List<IMyShipConnector>();
@@ -73,19 +74,42 @@ namespace IngameScript
             
             var uniqueConnectors = allConnectors.Distinct().ToList();
             
-            if (uniqueConnectors.Count == 0)
-            {
-                errorMessage = "No connectors with [AD] tag or in [AD] group found";
-                return false;
-            }
+            _allConnectors.Clear();
+            _connectorsByKey.Clear();
+
             foreach (var connector in uniqueConnectors)
             {
-                _connectors.Add(new ConnectorInfo
+                string connectorKey;
+                if (!TryGetConnectorKey(connector.CustomName, out connectorKey))
+                {
+                    continue;
+                }
+
+                var connectorInfo = new ConnectorInfo
                 {
                     Connector = connector,
+                    Key = connectorKey,
                     Status = ConnectorStatus.Available,
-                    ReservedShipId = 0
-                });
+                    ReservedShipId = 0,
+                    ReservedShipName = string.Empty
+                };
+
+                _allConnectors.Add(connectorInfo);
+
+                List<ConnectorInfo> connectorList;
+                if (!_connectorsByKey.TryGetValue(connectorKey, out connectorList))
+                {
+                    connectorList = new List<ConnectorInfo>();
+                    _connectorsByKey[connectorKey] = connectorList;
+                }
+
+                connectorList.Add(connectorInfo);
+            }
+
+            if (_allConnectors.Count == 0)
+            {
+                errorMessage = @"No connectors with [AD:Name] tag found";
+                return false;
             }
             _broadcastListener = program.IGC.RegisterBroadcastListener(BROADCAST_TAG);
             _broadcastListener.SetMessageCallback(BROADCAST_TAG);
@@ -136,7 +160,8 @@ namespace IngameScript
                     {
                         var parts = data.Split('|');
                         var droneName = parts.Length > 1 ? parts[1] : "Unknown";
-                        HandleDockingRequest(message.Source, droneName);
+                        var connectorKey = parts.Length > 2 ? parts[2] : "*";
+                        HandleDockingRequest(message.Source, droneName, connectorKey, true);
                     }
                 }
             }
@@ -151,7 +176,8 @@ namespace IngameScript
                     {
                         var parts = data.Split('|');
                         var droneName = parts.Length > 1 ? parts[1] : "Unknown";
-                        HandleDockingRequest(message.Source, droneName);
+                        var connectorKey = parts.Length > 2 ? parts[2] : "*";
+                        HandleDockingRequest(message.Source, droneName, connectorKey, false);
                     }
                     else if (data == "requestdockcoord")
                     {
@@ -165,82 +191,108 @@ namespace IngameScript
             }
         }
 
-        private void HandleDockingRequest(long shipId, string droneName)
+        private void HandleDockingRequest(long shipId, string droneName, string requestedConnectorKey, bool isBroadcast)
         {
-            for (int i = 0; i < _connectors.Count; i++)
+            requestedConnectorKey = string.IsNullOrWhiteSpace(requestedConnectorKey) ? "*" : requestedConnectorKey;
+
+            var existingConnector = FindConnectorByShipId(shipId);
+            if (existingConnector != null)
             {
-                if (_connectors[i].ReservedShipId == shipId)
+                if (existingConnector.Status == ConnectorStatus.Docking)
                 {
-                    var connectorInfo = _connectors[i];
-                    
-                    // If ship is re-requesting while in Docking state, it means it's outside the approach cone
-                    // Transition back to Reserved
-                    if (connectorInfo.Status == ConnectorStatus.Docking)
-                    {
-                        connectorInfo.Status = ConnectorStatus.Reserved;
-                        connectorInfo.ReservationTime = DateTime.Now;
-                        _connectors[i] = connectorInfo;
-                        _program.Echo($"Ship {shipId} re-requested docking, transitioning from Docking to Reserved");
-                    }
-                    
-                    var connectorPosition = connectorInfo.Connector.GetPosition();
-                    var connectorForward = connectorInfo.Connector.WorldMatrix.Forward;
-                    var approachPosition = connectorPosition + (connectorForward * ApproachDistance);
-                    var stationVelocity = _remoteControl.GetShipVelocities().LinearVelocity;
-
-                    var response = $"approachpos|{approachPosition.X:F2}|{approachPosition.Y:F2}|{approachPosition.Z:F2}|" +
-                                  $"{stationVelocity.X:F2}|{stationVelocity.Y:F2}|{stationVelocity.Z:F2}";
-                    _program.IGC.SendUnicastMessage(shipId, BROADCAST_TAG, response);
-                    
-                    return;
+                    existingConnector.Status = ConnectorStatus.Reserved;
+                    existingConnector.ReservationTime = DateTime.Now;
+                    _program.Echo($"Ship {shipId} re-requested docking, transitioning from Docking to Reserved");
                 }
-            }
 
-            var availableIndices = new List<int>();
-            for (int i = 0; i < _connectors.Count; i++)
-            {
-                if (_connectors[i].Status == ConnectorStatus.Available)
-                {
-                    availableIndices.Add(i);
-                }
-            }
-
-            if (availableIndices.Count > 0)
-            {
-                int randomIndex = availableIndices[_random.Next(availableIndices.Count)];
-                
-                var connectorInfo = _connectors[randomIndex];
-                connectorInfo.Status = ConnectorStatus.Reserved;
-                connectorInfo.ReservedShipId = shipId;
-                connectorInfo.ReservedShipName = droneName;
-                connectorInfo.ReservationTime = DateTime.Now;
-                _connectors[randomIndex] = connectorInfo;
-
-                var connectorPosition = connectorInfo.Connector.GetPosition();
-                var connectorForward = connectorInfo.Connector.WorldMatrix.Forward;
-                var approachPosition = connectorPosition + (connectorForward * ApproachDistance);
-                var stationVelocity = _remoteControl.GetShipVelocities().LinearVelocity;
-
-                var response = $"approachpos|{approachPosition.X:F2}|{approachPosition.Y:F2}|{approachPosition.Z:F2}|" +
-                              $"{stationVelocity.X:F2}|{stationVelocity.Y:F2}|{stationVelocity.Z:F2}";
-                _program.IGC.SendUnicastMessage(shipId, BROADCAST_TAG, response);
-                
+                existingConnector.ReservedShipName = droneName;
+                SendApproachResponse(existingConnector, shipId);
                 return;
             }
 
-            _program.IGC.SendUnicastMessage(shipId, BROADCAST_TAG, "nodocksavailable");
+            if (requestedConnectorKey != "*" && !_connectorsByKey.ContainsKey(requestedConnectorKey))
+            {
+                if (!isBroadcast)
+                {
+                    _program.IGC.SendUnicastMessage(shipId, BROADCAST_TAG, "nodocksavailable");
+                }
+                return;
+            }
+
+            List<ConnectorInfo> candidates = new List<ConnectorInfo>();
+
+            if (requestedConnectorKey == "*")
+            {
+                foreach (var connector in _allConnectors)
+                {
+                    if (connector.Status == ConnectorStatus.Available)
+                    {
+                        candidates.Add(connector);
+                    }
+                }
+            }
+            else
+            {
+                var connectorsForKey = _connectorsByKey[requestedConnectorKey];
+                foreach (var connector in connectorsForKey)
+                {
+                    if (connector.Status == ConnectorStatus.Available)
+                    {
+                        candidates.Add(connector);
+                    }
+                }
+            }
+
+            if (candidates.Count == 0)
+            {
+                _program.IGC.SendUnicastMessage(shipId, BROADCAST_TAG, "nodocksavailable");
+                return;
+            }
+
+            _program.Echo($"Found {candidates.Count} candidates for {droneName} on {requestedConnectorKey}");
+
+            var selectedConnector = candidates[_random.Next(candidates.Count)];
+            selectedConnector.Status = ConnectorStatus.Reserved;
+            selectedConnector.ReservedShipId = shipId;
+            selectedConnector.ReservedShipName = droneName;
+            selectedConnector.ReservationTime = DateTime.Now;
+
+            SendApproachResponse(selectedConnector, shipId);
+        }
+
+        private ConnectorInfo FindConnectorByShipId(long shipId)
+        {
+            foreach (var connectorInfo in _allConnectors)
+            {
+                if (connectorInfo.ReservedShipId == shipId)
+                {
+                    return connectorInfo;
+                }
+            }
+
+            return null;
+        }
+
+        private void SendApproachResponse(ConnectorInfo connectorInfo, long shipId)
+        {
+            var connectorPosition = connectorInfo.Connector.GetPosition();
+            var connectorForward = connectorInfo.Connector.WorldMatrix.Forward;
+            var approachPosition = connectorPosition + (connectorForward * ApproachDistance);
+            var stationVelocity = _remoteControl.GetShipVelocities().LinearVelocity;
+
+            var response = $"approachpos|{approachPosition.X:F2}|{approachPosition.Y:F2}|{approachPosition.Z:F2}|" +
+                          $"{stationVelocity.X:F2}|{stationVelocity.Y:F2}|{stationVelocity.Z:F2}";
+            _program.IGC.SendUnicastMessage(shipId, BROADCAST_TAG, response);
         }
 
         private void HandleDockCoordRequest(long shipId)
         {
-            for (int i = 0; i < _connectors.Count; i++)
+            foreach (var connectorInfo in _allConnectors)
             {
-                if (_connectors[i].ReservedShipId == shipId && _connectors[i].Status == ConnectorStatus.Reserved)
+                if (connectorInfo.ReservedShipId == shipId && connectorInfo.Status == ConnectorStatus.Reserved)
                 {
-                    var connectorInfo = _connectors[i];
                     connectorInfo.Status = ConnectorStatus.Docking;
-                    _connectors[i] = connectorInfo;
-                    
+
                     var matrix = connectorInfo.Connector.WorldMatrix;
                     var stationVelocity = _remoteControl.GetShipVelocities().LinearVelocity;
                     var response = $"dockcoord|{matrix.M11}|{matrix.M12}|{matrix.M13}|{matrix.M14}|" +
@@ -269,7 +321,7 @@ namespace IngameScript
         {
             var stationVelocity = _remoteControl.GetShipVelocities().LinearVelocity;
             
-            foreach (var connectorInfo in _connectors)
+            foreach (var connectorInfo in _allConnectors)
             {
                 if (connectorInfo.ReservedShipId == 0)
                     continue;
@@ -299,21 +351,17 @@ namespace IngameScript
 
         private void UpdateConnectorStatus()
         {
-            for (int i = 0; i < _connectors.Count; i++)
+            foreach (var connectorInfo in _allConnectors)
             {
-                var connectorInfo = _connectors[i];
-                
                 if (connectorInfo.Connector.IsConnected && connectorInfo.Status != ConnectorStatus.Occupied)
                 {
                     connectorInfo.Status = ConnectorStatus.Occupied;
-                    _connectors[i] = connectorInfo;
                 }
                 else if (!connectorInfo.Connector.IsConnected && connectorInfo.Status == ConnectorStatus.Occupied)
                 {
                     connectorInfo.Status = ConnectorStatus.Available;
                     connectorInfo.ReservedShipId = 0;
                     connectorInfo.ReservedShipName = string.Empty;
-                    _connectors[i] = connectorInfo;
                 }
             }
         }
@@ -322,7 +370,7 @@ namespace IngameScript
         {
             var shipsToCheck = new List<long>();
             
-            foreach (var connectorInfo in _connectors)
+            foreach (var connectorInfo in _allConnectors)
             {
                 if ((connectorInfo.Status == ConnectorStatus.Reserved || connectorInfo.Status == ConnectorStatus.Docking) 
                     && connectorInfo.ReservedShipId != 0)
@@ -353,25 +401,51 @@ namespace IngameScript
 
         private void ReleaseReservation(long shipId)
         {
-            for (int i = 0; i < _connectors.Count; i++)
+            foreach (var connectorInfo in _allConnectors)
             {
-                if (_connectors[i].ReservedShipId == shipId)
+                if (connectorInfo.ReservedShipId != shipId)
                 {
-                    if (_connectors[i].Status == ConnectorStatus.Occupied || _connectors[i].Connector.IsConnected)
-                    {
-                        continue;
-                    }
+                    continue;
+                }
 
-                    if (_connectors[i].Status == ConnectorStatus.Reserved || _connectors[i].Status == ConnectorStatus.Docking)
-                    {
-                        var connectorInfo = _connectors[i];
-                        connectorInfo.Status = ConnectorStatus.Available;
-                        connectorInfo.ReservedShipId = 0;
-                        connectorInfo.ReservedShipName = string.Empty;
-                        _connectors[i] = connectorInfo;
-                    }
+                if (connectorInfo.Status == ConnectorStatus.Occupied || connectorInfo.Connector.IsConnected)
+                {
+                    continue;
+                }
+
+                if (connectorInfo.Status == ConnectorStatus.Reserved || connectorInfo.Status == ConnectorStatus.Docking)
+                {
+                    connectorInfo.Status = ConnectorStatus.Available;
+                    connectorInfo.ReservedShipId = 0;
+                    connectorInfo.ReservedShipName = string.Empty;
                 }
             }
+        }
+
+        private bool TryGetConnectorKey(string name, out string key)
+        {
+            key = string.Empty;
+
+            if (string.IsNullOrEmpty(name))
+            {
+                return false;
+            }
+
+            var startIndex = name.IndexOf("[AD:", StringComparison.OrdinalIgnoreCase);
+            if (startIndex < 0)
+            {
+                return false;
+            }
+
+            startIndex += 4;
+            var endIndex = name.IndexOf(']', startIndex);
+            if (endIndex < 0)
+            {
+                return false;
+            }
+
+            key = name.Substring(startIndex, endIndex - startIndex).Trim();
+            return !string.IsNullOrEmpty(key);
         }
 
         private void UpdateDisplay()
@@ -383,7 +457,7 @@ namespace IngameScript
             allLines.Add("=== Auto Dock Station ===");
             allLines.Add("");
 
-            var sortedConnectors = _connectors.OrderBy(c => c.Connector.CustomName, new NaturalStringComparer()).ToList();
+            var sortedConnectors = _allConnectors.OrderBy(c => c.Connector.CustomName, new NaturalStringComparer()).ToList();
 
             for (int i = 0; i < sortedConnectors.Count; i++)
             {
@@ -470,7 +544,7 @@ namespace IngameScript
 
         public List<ConnectorInfo> GetConnectors()
         {
-            return _connectors;
+            return _allConnectors;
         }
         #endregion
 
@@ -483,9 +557,10 @@ namespace IngameScript
             Occupied
         }
 
-        public struct ConnectorInfo
+        public class ConnectorInfo
         {
             public IMyShipConnector Connector;
+            public string Key;
             public ConnectorStatus Status;
             public long ReservedShipId;
             public string ReservedShipName;
@@ -525,4 +600,5 @@ namespace IngameScript
         #endregion
     }
 }
+
 

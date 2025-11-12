@@ -18,12 +18,20 @@ namespace Pathfinder
     {
         public override void LoadData()
         {
-            MyAPIGateway.Utilities.ShowMessage("Pathfinder", "Pathfinder mod loaded.");
+            Utils.InitializeLog();
+
+            MyAPIGateway.Utilities.ShowMessage("Pathfinder", "Pathfinder loaded.");
             OctreeAStarSettings.Instance.Load();
+        }
+
+        protected override void UnloadData()
+        {
+            Utils.ShutdownLog();
         }
 
         public override void BeforeStart()
         {
+            
             // Separator
             var separator = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlSeparator, IMyRemoteControl>("");
             separator.SupportsMultipleBlocks = true;
@@ -131,6 +139,111 @@ namespace Pathfinder
             };
             MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(gpsCombo);
 
+            // Min Altitude property (visible)
+            var minAltitudeProperty = MyAPIGateway.TerminalControls.CreateProperty<double, IMyRemoteControl>("PathfinderMinAltitude");
+            minAltitudeProperty.SupportsMultipleBlocks = true;
+            minAltitudeProperty.Visible = (rcBlock) => true;
+            minAltitudeProperty.Enabled = (rcBlock) => true;
+            minAltitudeProperty.Getter = (rcBlock) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                return nav != null ? nav.MinAltitude : 0.0;
+            };
+            minAltitudeProperty.Setter = (rcBlock, value) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                if (nav != null)
+                {
+                    nav.MinAltitude = value;
+                }
+            };
+            MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(minAltitudeProperty);
+
+            var minAltitudeSlider = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlSlider, IMyRemoteControl>("PathfinderMinAltitudeSlider");
+            minAltitudeSlider.Title = MyStringId.GetOrCompute("Minimum Altitude");
+            minAltitudeSlider.Tooltip = MyStringId.GetOrCompute("Minimum altitude (meters) the pathfinder will maintain");
+            minAltitudeSlider.SupportsMultipleBlocks = true;
+            minAltitudeSlider.Visible = (rcBlock) => true;
+            minAltitudeSlider.Enabled = (rcBlock) => true;
+            minAltitudeSlider.SetLimits(0f, 5000f);
+            minAltitudeSlider.Getter = (rcBlock) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                return nav != null ? (float)nav.MinAltitude : 0f;
+            };
+            minAltitudeSlider.Setter = (rcBlock, value) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                if (nav != null)
+                {
+                    nav.MinAltitude = value;
+                }
+            };
+            minAltitudeSlider.Writer = (rcBlock, builder) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                var altitude = nav != null ? nav.MinAltitude : 0.0;
+                builder.AppendFormat(CultureInfo.InvariantCulture, "{0:N1} m", altitude);
+            };
+            MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(minAltitudeSlider);
+
+            var maxAltitudeProperty = MyAPIGateway.TerminalControls.CreateProperty<double, IMyRemoteControl>("PathfinderMaxAltitude");
+            maxAltitudeProperty.SupportsMultipleBlocks = true;
+            maxAltitudeProperty.Visible = (rcBlock) => true;
+            maxAltitudeProperty.Enabled = (rcBlock) => true;
+            maxAltitudeProperty.Getter = (rcBlock) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                return nav != null ? nav.MaxAltitude : 0.0;
+            };
+            maxAltitudeProperty.Setter = (rcBlock, value) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                if (nav != null)
+                {
+                    nav.MaxAltitude = value;
+                }
+            };
+            MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(maxAltitudeProperty);
+
+            var maxAltitudeSlider = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlSlider, IMyRemoteControl>("PathfinderMaxAltitudeSlider");
+            maxAltitudeSlider.Title = MyStringId.GetOrCompute("Maximum Altitude");
+            maxAltitudeSlider.Tooltip = MyStringId.GetOrCompute("Maximum altitude (meters) the pathfinder will maintain");
+            maxAltitudeSlider.SupportsMultipleBlocks = true;
+            maxAltitudeSlider.Visible = (rcBlock) => true;
+            maxAltitudeSlider.Enabled = (rcBlock) => true;
+            maxAltitudeSlider.SetLimits(0f, 5000f);
+            maxAltitudeSlider.Getter = (rcBlock) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                return nav != null ? (float)nav.MaxAltitude : 0f;
+            };
+            maxAltitudeSlider.Setter = (rcBlock, value) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                if (nav != null)
+                {
+                    nav.MaxAltitude = value;
+                }
+            };
+            maxAltitudeSlider.Writer = (rcBlock, builder) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                var altitude = nav != null ? nav.MaxAltitude : 0.0;
+                builder.AppendFormat(CultureInfo.InvariantCulture, "{0:N1} m", altitude);
+            };
+            MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(maxAltitudeSlider);
+
             var recomputePathAction = MyAPIGateway.TerminalControls.CreateAction<IMyRemoteControl>("RecomputePath");
             recomputePathAction.Name = new StringBuilder("Recompute Path");
             recomputePathAction.Action = (rcBlock) => RecomputePath(rcBlock);
@@ -146,20 +259,21 @@ namespace Pathfinder
             c.Action = (rcBlock) => RecomputePath(rcBlock);
             MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(c);
 
-            var stepPathAction = MyAPIGateway.TerminalControls.CreateAction<IMyRemoteControl>("StepPath");
-            stepPathAction.Name = new StringBuilder("Step Pathfinding");
-            stepPathAction.Action = (rcBlock) => StepPath(rcBlock);
-            stepPathAction.Enabled = (rcBlock) => true;
-            stepPathAction.Writer = (rcBlock, builder) => builder.Append("Step Pathfinding");
-            MyAPIGateway.TerminalControls.AddAction<IMyRemoteControl>(stepPathAction);
+            // Debug actions
+            // var stepPathAction = MyAPIGateway.TerminalControls.CreateAction<IMyRemoteControl>("StepPath");
+            // stepPathAction.Name = new StringBuilder("Step Pathfinding");
+            // stepPathAction.Action = (rcBlock) => StepPath(rcBlock);
+            // stepPathAction.Enabled = (rcBlock) => true;
+            // stepPathAction.Writer = (rcBlock, builder) => builder.Append("Step Pathfinding");
+            // MyAPIGateway.TerminalControls.AddAction<IMyRemoteControl>(stepPathAction);
 
-            var stepBtn = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlButton, IMyRemoteControl>("Step");
-            stepBtn.Title = MyStringId.GetOrCompute("Step");
-            stepBtn.Tooltip = MyStringId.GetOrCompute("Advance the pathfinding by one step");
-            stepBtn.SupportsMultipleBlocks = true;
-            stepBtn.Visible = (rcBlock) => true;
-            stepBtn.Action = (rcBlock) => StepPath(rcBlock);
-            MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(stepBtn);
+            // var stepBtn = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlButton, IMyRemoteControl>("Step");
+            // stepBtn.Title = MyStringId.GetOrCompute("Step");
+            // stepBtn.Tooltip = MyStringId.GetOrCompute("Advance the pathfinding by one step");
+            // stepBtn.SupportsMultipleBlocks = true;
+            // stepBtn.Visible = (rcBlock) => true;
+            // stepBtn.Action = (rcBlock) => StepPath(rcBlock);
+            // MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(stepBtn);
 
             var clearPathAction = MyAPIGateway.TerminalControls.CreateAction<IMyRemoteControl>("ClearPath");
             clearPathAction.Name = new StringBuilder("Clear Path");
@@ -184,13 +298,14 @@ namespace Pathfinder
             clearPathButton.Action = (rcBlock) => ClearPath(rcBlock);
             MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(clearPathButton);
 
-            var loadSettingsButton = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlButton, IMyRemoteControl>("LoadPathfinderSettings");
-            loadSettingsButton.Title = MyStringId.GetOrCompute("Load Settings");
-            loadSettingsButton.Tooltip = MyStringId.GetOrCompute("Load OctreeAStar settings from PathfinderSettings.xml");
-            loadSettingsButton.SupportsMultipleBlocks = true;
-            loadSettingsButton.Visible = (rcBlock) => true;
-            loadSettingsButton.Action = (rcBlock) => OctreeAStarSettings.Instance.Load();
-            MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(loadSettingsButton);
+            // Debug
+            // var loadSettingsButton = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlButton, IMyRemoteControl>("LoadPathfinderSettings");
+            // loadSettingsButton.Title = MyStringId.GetOrCompute("Load Settings");
+            // loadSettingsButton.Tooltip = MyStringId.GetOrCompute("Load OctreeAStar settings from PathfinderSettings.xml");
+            // loadSettingsButton.SupportsMultipleBlocks = true;
+            // loadSettingsButton.Visible = (rcBlock) => true;
+            // loadSettingsButton.Action = (rcBlock) => OctreeAStarSettings.Instance.Load();
+            // MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(loadSettingsButton);
         }
 
         private void RecomputePath(IMyTerminalBlock rc)
@@ -199,7 +314,7 @@ namespace Pathfinder
             var navigationComponent = GetNavigationComponent(rc, out error);
             if (navigationComponent == null)
             {
-                MyAPIGateway.Utilities.ShowMessage("Pathfinder", error ?? "Pathfinder component not found");
+                Utils.Log(MyLogSeverity.Error, "Pathfinder: {0}", error ?? "Pathfinder component not found");
                 return;
             }
             navigationComponent.NeedsRecompute = true;
@@ -211,7 +326,7 @@ namespace Pathfinder
             var navigationComponent = GetNavigationComponent(rc, out error);
             if (navigationComponent == null)
             {
-                MyAPIGateway.Utilities.ShowMessage("Pathfinder", error ?? "Pathfinder component not found");
+                Utils.Log(MyLogSeverity.Error, "Pathfinder: {0}", error ?? "Pathfinder component not found");
                 return;
             }
             navigationComponent.Step();
@@ -223,7 +338,7 @@ namespace Pathfinder
             var navigationComponent = GetNavigationComponent(rc, out error);
             if (navigationComponent == null)
             {
-                MyAPIGateway.Utilities.ShowMessage("Pathfinder", error ?? "Pathfinder component not found");
+                Utils.Log(MyLogSeverity.Error, "Pathfinder: {0}", error ?? "Pathfinder component not found");
                 return;
             }
             navigationComponent.ClearPath();

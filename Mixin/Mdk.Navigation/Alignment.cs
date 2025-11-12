@@ -100,7 +100,6 @@ namespace IngameScript
             return true;
         }
 
-
         public bool AlignWithWorldMatrix(MatrixD targetMatrix)
         {            
             var currentMatrix = _remoteControl.WorldMatrix;
@@ -154,41 +153,59 @@ namespace IngameScript
 
         public bool AlignWithYawPitchRoll(double? yaw, double pitch, double roll)
         {
-            var angularVelocity = _remoteControl.GetShipVelocities().AngularVelocity;
-
-            // Calculate ship's current YPR relative to planet
-            double currentYaw, currentPitch, currentRoll;
-            CalculateYawPitchRoll(out currentYaw, out currentPitch, out currentRoll);
-
-            // Calculate errors
-            var yawError = yaw.HasValue ? NormalizeAngle(yaw.Value + currentYaw) : 0.0;
-            var pitchError = pitch + currentPitch;
-            var rollError = roll - currentRoll;
-
-            // Apply PID control
-            var yawOutput = yaw.HasValue ? PidVectorYaw.Control(yawError) : 0.0;
-            var pitchOutput = PidVectorPitch.Control(pitchError);
-            var rollOutput = PidVectorRoll.Control(rollError);
-
-            var allAligned =
-                Math.Abs(yawError) < _section.Precision.Value &&
-                Math.Abs(pitchError) < _section.Precision.Value &&
-                Math.Abs(rollError) < _section.Precision.Value &&
-                angularVelocity.Length() < _section.Precision.Value;
-
-            var velocityFactor = 0.1;
-            var finalYaw = yawOutput * velocityFactor;
-            var finalPitch = pitchOutput * velocityFactor;
-            var finalRoll = rollOutput * velocityFactor;
-
-            ApplyGyroOverrides(finalYaw, finalPitch, finalRoll);
-
-            if (allAligned)
+            if (_remoteControl == null)
             {
-                Stop();
+                return true;
             }
 
-            return allAligned;
+            var gravity = _remoteControl.GetNaturalGravity();
+            var upDirection = gravity.LengthSquared() > 1e-6 ? -Vector3D.Normalize(gravity) : _remoteControl.WorldMatrix.Up;
+
+            var reference = new Vector3D(1, 0, 0);
+            var planarReference = reference - Vector3D.Dot(reference, upDirection) * upDirection;
+            if (planarReference.LengthSquared() < 1e-6)
+            {
+                planarReference = new Vector3D(0, 0, 1) - Vector3D.Dot(new Vector3D(0, 0, 1), upDirection) * upDirection;
+            }
+            if (planarReference.LengthSquared() < 1e-6)
+            {
+                planarReference = Vector3D.CalculatePerpendicularVector(upDirection);
+            }
+            planarReference.Normalize();
+
+            double yawRadians = yaw.HasValue ? MathHelper.ToRadians(yaw.Value) : 0.0;
+            var yawRotation = MatrixD.CreateFromAxisAngle(upDirection, yawRadians);
+            var forwardVector = Vector3D.Normalize(Vector3D.Transform(planarReference, yawRotation));
+
+            var pitchAxis = Vector3D.Cross(upDirection, forwardVector);
+            if (pitchAxis.LengthSquared() < 1e-6)
+            {
+                pitchAxis = Vector3D.CalculatePerpendicularVector(forwardVector);
+            }
+            pitchAxis.Normalize();
+
+            var pitchRadians = MathHelper.ToRadians(pitch);
+            var pitchRotation = MatrixD.CreateFromAxisAngle(pitchAxis, pitchRadians);
+            forwardVector = Vector3D.Normalize(Vector3D.Transform(forwardVector, pitchRotation));
+            var adjustedUp = Vector3D.Normalize(Vector3D.Transform(upDirection, pitchRotation));
+
+            var rollRadians = MathHelper.ToRadians(roll);
+            if (Math.Abs(rollRadians) > 1e-6)
+            {
+                var rollRotation = MatrixD.CreateFromAxisAngle(forwardVector, rollRadians);
+                adjustedUp = Vector3D.Normalize(Vector3D.Transform(adjustedUp, rollRotation));
+            }
+
+            var rightVector = Vector3D.Cross(adjustedUp, forwardVector);
+            if (rightVector.LengthSquared() < 1e-6)
+            {
+                rightVector = Vector3D.CalculatePerpendicularVector(forwardVector);
+            }
+            rightVector.Normalize();
+            adjustedUp = Vector3D.Normalize(Vector3D.Cross(forwardVector, rightVector));
+
+            var targetMatrix = MatrixD.CreateWorld(_remoteControl.GetPosition(), forwardVector, adjustedUp);
+            return AlignWithWorldMatrix(targetMatrix);
         }
 
         private double NormalizeAngle(double angle)
@@ -426,7 +443,7 @@ namespace IngameScript
             }
         }
 
-        public bool AlignWithTarget(Vector3D targetPosition)
+        public bool AlignWithTarget(Vector3D targetPosition, double yawOffsetDegrees = 0, double pitchOffsetDegrees = 0)
         {
             if (_remoteControl == null) 
             {
@@ -436,6 +453,27 @@ namespace IngameScript
             var directionToTarget = Vector3D.Normalize(targetPosition - currentPosition);
             var gravityVector = _remoteControl.GetNaturalGravity();
             var upDirection = gravityVector.LengthSquared() > 0 ? -Vector3D.Normalize(gravityVector) : _remoteControl.WorldMatrix.Up;
+            if (Math.Abs(yawOffsetDegrees) > 1e-6)
+            {
+                var angleRadians = MathHelper.ToRadians(yawOffsetDegrees);
+                var rotation = MatrixD.CreateFromAxisAngle(upDirection, angleRadians);
+                directionToTarget = Vector3D.Normalize(Vector3D.Transform(directionToTarget, rotation));
+            }
+            var rightDirection = Vector3D.Cross(upDirection, directionToTarget);
+            if (rightDirection.LengthSquared() < 1e-6)
+            {
+                rightDirection = Vector3D.CalculatePerpendicularVector(directionToTarget);
+            }
+            rightDirection.Normalize();
+
+            if (Math.Abs(pitchOffsetDegrees) > 1e-6)
+            {
+                var pitchRadians = MathHelper.ToRadians(pitchOffsetDegrees);
+                var pitchRotation = MatrixD.CreateFromAxisAngle(rightDirection, pitchRadians);
+                directionToTarget = Vector3D.Normalize(Vector3D.Transform(directionToTarget, pitchRotation));
+                upDirection = Vector3D.Normalize(Vector3D.Transform(upDirection, pitchRotation));
+            }
+
             var targetMatrix = MatrixD.CreateWorld(Vector3D.Zero, directionToTarget, upDirection);
             return AlignWithWorldMatrix(targetMatrix);
         }

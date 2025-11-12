@@ -8,6 +8,8 @@
             </Id>
             <RegisteredStorageGuids>
                 <guid>7ff8e4a6-69ca-48d3-917e-8d8d4c3a4d9a</guid>
+                <guid>79df6c4d-962b-438f-b7b3-eca6c479d67d</guid>
+                <guid>3a75e1a9-bdc9-4a07-b5f1-9b9b6c1b0ed8</guid>
             </RegisteredStorageGuids>
         </EntityComponent>
     </EntityComponents>
