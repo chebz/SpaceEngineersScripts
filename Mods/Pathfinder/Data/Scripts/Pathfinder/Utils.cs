@@ -113,6 +113,21 @@ namespace Pathfinder
                 MyBillboard.BlendTypeEnum.Standard, 
                 1f);
         }
+
+        public static void DrawOBB(MyOrientedBoundingBoxD obb, Color color, bool wireframe, float intensity = 1f, float lineWidth = 0.02f)
+        {
+            var corners = new Vector3D[8];
+            obb.GetCorners(corners, 0);
+            var startVertices = MyOrientedBoundingBoxD.StartVertices;
+            var endVertices = MyOrientedBoundingBoxD.EndVertices;
+
+            for (int i = 0; i < startVertices.Length; i++)
+            {
+                var from = corners[startVertices[i]];
+                var to = corners[endVertices[i]];
+                DrawLine(from, to, color, lineWidth);
+            }
+        }
         #endregion
 
         #region Debug Timings
@@ -271,8 +286,20 @@ namespace Pathfinder
             };
         }
 
-        public static Octant.OctantOccupancy GetOccupancy(BoundingBoxD bounds, IMyCubeGrid grid)
+        public static Octant.OctantOccupancy GetOccupancy(BoundingBoxD bounds, IMyCubeGrid grid, bool considerDynamicObstacles = false, IList<MyOrientedBoundingBoxD> dynamicObstacles = null)
         {
+            if (considerDynamicObstacles && dynamicObstacles != null)
+            {
+                for (int i = 0; i < dynamicObstacles.Count; i++)
+                {
+                    var dynamicObstacle = dynamicObstacles[i];
+                    if (dynamicObstacle.Intersects(ref bounds))
+                    {
+                        return Octant.OctantOccupancy.Partial;
+                    }
+                }
+            }
+
             var entitiesInNode = new List<MyEntity>();
             MyGamePruningStructure.GetTopMostEntitiesInBox(ref bounds, entitiesInNode);
 
@@ -327,7 +354,7 @@ namespace Pathfinder
                 }
 
                 var cubeGrid = entity as IMyCubeGrid;
-                if (cubeGrid != null)
+                if (cubeGrid != null && IsStaticObstacle(cubeGrid))
                 {
                     var slimBlocks = new List<IMySlimBlock>();
                     cubeGrid.GetBlocks(slimBlocks);
@@ -344,6 +371,27 @@ namespace Pathfinder
                 }
             }
             return Octant.OctantOccupancy.Empty;
+        }
+
+        public static bool IsStaticObstacle(IMyCubeGrid grid)
+        {
+            if (grid == null)
+            {
+                return false;
+            }
+            if (grid.IsStatic)
+            {
+                return true;
+            }
+            if (grid.Physics == null)
+            {
+                return true;
+            }
+            if (grid.Physics.LinearVelocity.Length() < 1e-3 && grid.Physics.AngularVelocity.Length() < 1e-3)
+            {
+                return true;
+            }
+            return false;
         }
         #endregion
 

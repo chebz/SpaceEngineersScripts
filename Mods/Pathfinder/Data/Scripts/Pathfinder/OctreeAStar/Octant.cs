@@ -153,7 +153,7 @@ namespace Pathfinder.OctreeAStar
             }
             else
             {
-                occupancy = Utils.GetOccupancy(bounds, _graph.OwnGrid);
+                occupancy = Utils.GetOccupancy(bounds, _graph.OwnGrid, _graph.UseDynamicObstacles, _graph.DynamicObstacles);
             }
 
             if (occupancy == OctantOccupancy.Partial || occupancy == OctantOccupancy.PartialInTerrain)

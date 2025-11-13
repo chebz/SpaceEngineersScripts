@@ -179,6 +179,29 @@
             "detail": "Build the SpiralMiner Space Engineers script"
         },
         {
+            "label": "build-pf_patrol",
+            "type": "shell",
+            "command": "dotnet",
+            "args": [
+                "build",
+                "Scripts/PathfinderPatrol/PathfinderPatrol.sln",
+                "--configuration",
+                "Debug"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "problemMatcher": "$msCompile",
+            "detail": "Build the PathfinderPatrol Space Engineers script"
+        },
+        {
             "label": "copy-pathfinder",
             "type": "shell",
             "command": "${workspaceFolder}/copy-pathfinder.bat",

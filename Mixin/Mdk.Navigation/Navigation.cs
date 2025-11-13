@@ -401,7 +401,11 @@ namespace IngameScript
             }
             var mass = _remoteControl.CalculateShipMass().TotalMass;
             var gravMagnitude = _remoteControl.GetNaturalGravity().Length();
-            return minThrust / mass / gravMagnitude;
+            if (gravMagnitude == 0)
+            {
+                gravMagnitude = 1;
+            }
+            return minThrust / mass / 10;
         }
 
         private double CalculateDesiredSpeedAtPosition(Vector3D target, double maxSpeed)
@@ -412,6 +416,7 @@ namespace IngameScript
             // Correct breaking distance formula: v²/(2a)
             // This gives us the distance needed to stop from maxSpeed
             var maxAcceleration = CalculateMaximumAcceleration();
+            _program.Echo($"Max Acceleration: {maxAcceleration}");
             var breakingDistance = (maxSpeed * maxSpeed) / (2.0 * maxAcceleration);
             
             if (distance > breakingDistance)

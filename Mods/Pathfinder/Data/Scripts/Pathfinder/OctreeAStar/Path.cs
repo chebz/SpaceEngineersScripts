@@ -15,14 +15,19 @@ namespace Pathfinder.OctreeAStar
         public State state = State.NotStarted;
         public List<Vector3D> points = new List<Vector3D>();
 
-        public void Render()
+        public void Render(Color lineColor, bool showWaypoints)
         {
             var thickness = OctreeAStarSettings.Instance.PathRenderThickness;
             for (var i = 0; i < points.Count - 1; i++)
             {
                 var start = points[i];
                 var end = points[i + 1];
-                Utils.DrawLine(start, end, Color.Cyan, thickness);
+                Utils.DrawLine(start, end, lineColor, thickness);
+            }
+
+            if (!showWaypoints)
+            {
+                return;
             }
 
             foreach (var point in points)

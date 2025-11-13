@@ -28,6 +28,8 @@ namespace Pathfinder.OctreeAStar
         private readonly List<Vector3D> _offsetBuffer = new List<Vector3D>();
         private readonly List<SegmentPair> _segmentBuffer = new List<SegmentPair>();
         private readonly List<Octant> _octantBuffer = new List<Octant>();
+        private bool _useDynamicObstacles;
+        private List<MyOrientedBoundingBoxD> _dynamicObstacles;
 
         #region Debug
         private int _exploreCount;
@@ -116,17 +118,25 @@ namespace Pathfinder.OctreeAStar
             ExploreCount++;
         }
 
-        public void BeginFindPath(IMyRemoteControl remoteControl, Vector3D start, Vector3D end, double minAltitude, double maxAltitude)
+        public bool UseDynamicObstacles => _useDynamicObstacles && _dynamicObstacles != null && _dynamicObstacles.Count > 0;
+
+        public List<MyOrientedBoundingBoxD> DynamicObstacles => _dynamicObstacles;
+
+        public void BeginFindPath(IMyRemoteControl remoteControl, Vector3D start, Vector3D end, double minAltitude, double maxAltitude, bool enableDynamicPathRefinement = false, List<MyOrientedBoundingBoxD> dynamicObstacles = null)
         {
             RemoteControl = remoteControl;
             OwnGrid = remoteControl.CubeGrid;
             AgentSize = OwnGrid.WorldVolume.Radius * 2;
             MinAltitude = minAltitude;
             MaxAltitude = maxAltitude;
+            _useDynamicObstacles = enableDynamicPathRefinement;
+            _dynamicObstacles = enableDynamicPathRefinement && dynamicObstacles != null
+                ? new List<MyOrientedBoundingBoxD>(dynamicObstacles)
+                : null;
 
             var settings = OctreeAStarSettings.Instance;
-            var configuredMaxRootSize = settings.MaxRootSize;
-            var configuredMinRootSize = settings.MinRootSize;
+            var configuredMaxRootSize = enableDynamicPathRefinement ? settings.MaxDPRRootSize : settings.MaxRootSize;
+            var configuredMinRootSize = enableDynamicPathRefinement ? settings.MinDPRRootSize : settings.MinRootSize;
             _originalStart = start;
             Start = start;
             End = end;
@@ -138,32 +148,10 @@ namespace Pathfinder.OctreeAStar
             var effectiveMinRootSize = configuredMinRootSize > 0 ? configuredMinRootSize : 0.0;
             var effectiveMaxRootSize = configuredMaxRootSize > 0 ? configuredMaxRootSize : double.MaxValue;
             var desiredRootSize = Math.Max(effectiveMinRootSize, scaledDistance);
+            desiredRootSize = Math.Max(desiredRootSize, AgentSize);
             maxRootSize = Math.Min(effectiveMaxRootSize, desiredRootSize);
 
-            var minimumDistance = AgentSize > 0 ? AgentSize * 2.0 : 0.0;
-            if (minimumDistance > 0.0 && Vector3D.Distance(start, end) < minimumDistance)
-            {
-                NodesProcessed = 0;
-                StepCount = 0;
-                ExploreCount = 0;
-                _currentExplorationCount = 0;
-                _isReverse = false;
-
-                Open.Clear();
-                OpenReverse.Clear();
-                Closed.Clear();
-                ClosedReverse.Clear();
-                MeetPoints.Clear();
-                Root = null;
-
-                Path = new Path
-                {
-                    state = Path.State.NoPath
-                };
-
-                MyAPIGateway.Utilities.ShowMessage("Pathfinder", "No path calculated - start and end are too close.");
-                return;
-            }
+            
 
             BeginFindPathInternal();
         }
@@ -182,6 +170,8 @@ namespace Pathfinder.OctreeAStar
             ExploreCount = 0;
             _currentExplorationCount = 0;
             _isReverse = false;
+            _useDynamicObstacles = false;
+            _dynamicObstacles = null;
         }
 
         private void BeginFindPathInternal()
@@ -232,8 +222,35 @@ namespace Pathfinder.OctreeAStar
             if (!TryFindEnd())
             {
                 MyAPIGateway.Utilities.ShowMessage("Pathfinder", "No path found, end point is not reachable");
+                Path.state = Path.State.NoPath;
                 return;
             }
+
+            var minimumDistance = AgentSize > 0 ? AgentSize * 2.0 : 0.0;
+            if (minimumDistance > 0.0 && Vector3D.Distance(Start, End) < minimumDistance)
+            {
+                NodesProcessed = 0;
+                StepCount = 0;
+                ExploreCount = 0;
+                _currentExplorationCount = 0;
+                _isReverse = false;
+
+                Open.Clear();
+                OpenReverse.Clear();
+                Closed.Clear();
+                ClosedReverse.Clear();
+                MeetPoints.Clear();
+                Root = null;
+
+                Path = new Path
+                {
+                    points = new List<Vector3D> { Start, End },
+                    state = Path.State.Ready
+                };
+
+                return;
+            }
+
             // find the closest large octant center behind Start
             {
                 var dir = (Start - End).Normalized();
@@ -591,7 +608,7 @@ namespace Pathfinder.OctreeAStar
             {
                 var center = End + offsets[i];
                 var bounds = new BoundingBoxD(center - halfSize, center + halfSize);
-                var occupancy = Utils.GetOccupancy(bounds, OwnGrid);
+                var occupancy = Utils.GetOccupancy(bounds, OwnGrid, UseDynamicObstacles, _dynamicObstacles);
                 if (occupancy == Octant.OctantOccupancy.Empty)
                 {
                     End = center;
@@ -936,7 +953,14 @@ namespace Pathfinder.OctreeAStar
             }
             if (Path != null && OctreeAStarSettings.Instance.RenderPath)
             {
-                Path.Render();
+                Path.Render(Color.Cyan, true);
+            }
+            if (DynamicObstacles != null && DynamicObstacles.Count > 0)
+            {
+                foreach (var obstacle in DynamicObstacles)
+                {
+                    Utils.DrawOBB(obstacle, Color.Red, true);
+                }
             }
         }
         #endregion

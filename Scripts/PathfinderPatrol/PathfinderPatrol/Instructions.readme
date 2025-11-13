@@ -1,0 +1,61 @@
+R e a d m e
+-----------
+
+PathfinderPatrol orchestrates a simple two-point patrol loop by driving the Pathfinder
+navigation script. Drop this programmable block script on the same grid as:
+
+- a functional `IMyRemoteControl`
+- at least one programmable block running the `PathfindingNavigation` script (name it with `[PF]`)
+- the Pathfinder mod (for the hidden terminal properties)
+
+Initial Setup
+-------------
+1. Load this script into a programmable block (PB). Give the block a clear name; the script will pass
+   that name to Pathfinder when it asks it to run.
+2. Place the Pathfinder navigation PB on the same grid and include `[PF]` in its Custom Name so the patrol
+   script can locate it automatically.
+3. (Optional) Tag any LCD/Panel you want to use for status output with `[PP]`. The PB’s surface is used
+   automatically.
+4. Run the script once. It populates the PB’s Custom Data with:
+
+```
+=== PathfinderPatrol Start ===
+PointA: PointA:0.00:0.00:0.00
+PointB: PointB:0.00:0.00:0.00
+WaitDuration: 5
+StartOnLoad: False
+=== PathfinderPatrol End ===
+```
+
+5. Replace `PointA` and `PointB` with GPS coordinates (`GPS:Name:X:Y:Z:` or `Name:X:Y:Z`). Adjust
+   `WaitDuration` (seconds to pause at each waypoint) and set `StartOnLoad` to `True` if the patrol should
+   resume automatically after a world load.
+
+How It Works
+------------
+- `PathfinderPatrol` alternates between Point A and Point B. When it requests Pathfinder to travel to the
+  next waypoint it issues `start <GPS> <PatrolPBName>` to the `[PF]` programmable block.
+- PathfinderNavigation, when properly configured, calls back into this script with `pf_start`, `pf_stop`,
+  and `pf_nopath` commands so the patrol can advance, wait, or abort. No timers are required.
+- Status text showing the current state plus any detail messages is written to every `[PP]` panel and to
+  the patrol PB’s LCD.
+
+Commands
+--------
+Run these in the patrol PB’s terminal:
+
+- `start` – begin the patrol loop (or resume if it was paused)
+- `stop` – halt immediately and cancel any pending wait
+- `pf_start` / `pf_stop` / `pf_nopath` – normally triggered by PathfinderNavigation; exposed in case you
+  need to test the callbacks manually
+
+Tips & Troubleshooting
+----------------------
+- The patrol will not start unless both PointA and PointB are valid GPS coordinates.
+- If the script prints “Pathfinder… not found”, check that the Pathfinder PB’s name contains `[PF]`.
+- When running multiple patrol craft, make sure each patrol PB has a unique name; that name is how
+  Pathfinder knows which PB to call back.
+- To monitor path progress, enable “StartOnLoad” only after verifying the patrol runs cleanly once.
+
+Stay groovy and happy patrolling.
+

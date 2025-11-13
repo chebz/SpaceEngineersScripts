@@ -66,6 +66,45 @@ namespace Pathfinder
             pathStatusProperty.Setter = (rcBlock, value) => { };
             MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(pathStatusProperty);
 
+            // Current waypoint index property (hidden)
+            var currentWaypointIndexProperty = MyAPIGateway.TerminalControls.CreateProperty<int, IMyRemoteControl>("CurrentWaypointIndex");
+            currentWaypointIndexProperty.SupportsMultipleBlocks = true;
+            currentWaypointIndexProperty.Visible = (rcBlock) => false;
+            currentWaypointIndexProperty.Enabled = (rcBlock) => true;
+            currentWaypointIndexProperty.Getter = (rcBlock) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                return nav != null ? nav.CurrentWaypointIndex : -1;
+            };
+            currentWaypointIndexProperty.Setter = (rcBlock, value) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                if (nav != null)
+                {
+                    nav.SetCurrentWaypointIndex(value);
+                }
+            };
+            MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(currentWaypointIndexProperty);
+
+            // Dynamic path refinement path property (hidden)
+            var dprPathProperty = MyAPIGateway.TerminalControls.CreateProperty<string, IMyRemoteControl>("DPRPath");
+            dprPathProperty.SupportsMultipleBlocks = true;
+            dprPathProperty.Visible = (rcBlock) => false;
+            dprPathProperty.Enabled = (rcBlock) => true;
+            dprPathProperty.Getter = (rcBlock) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                return nav != null ? nav.GetRefinedPathString() : string.Empty;
+            };
+            dprPathProperty.Setter = (rcBlock, value) =>
+            {
+                // Intentionally left blank - refined path is managed internally
+            };
+            MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(dprPathProperty);
+
             // Goal property (visible)
             var destinationProperty = MyAPIGateway.TerminalControls.CreateProperty<Vector3D?, IMyRemoteControl>("PathfinderDestination");
             destinationProperty.SupportsMultipleBlocks = true;
@@ -281,14 +320,6 @@ namespace Pathfinder
             clearPathAction.Enabled = (rcBlock) => true;
             clearPathAction.Writer = (rcBlock, builder) => builder.Append("Clear Path");
             MyAPIGateway.TerminalControls.AddAction<IMyRemoteControl>(clearPathAction);
-
-            var clearBtn = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlButton, IMyRemoteControl>("ClearPathButton");
-            clearBtn.Title = MyStringId.GetOrCompute("Clear Path");
-            clearBtn.Tooltip = MyStringId.GetOrCompute("Stop pathfinding and clear the current path");
-            clearBtn.SupportsMultipleBlocks = true;
-            clearBtn.Visible = (rcBlock) => true;
-            clearBtn.Action = (rcBlock) => ClearPath(rcBlock);
-            MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(clearBtn);
 
             var clearPathButton = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlButton, IMyRemoteControl>("ClearPath");
             clearPathButton.Title = MyStringId.GetOrCompute("Clear Path");

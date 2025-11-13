@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Sandbox.ModAPI.Ingame;
 using Sandbox.ModAPI.Interfaces;
 using SpaceEngineers.Game.ModAPI.Ingame;
@@ -23,13 +24,15 @@ namespace IngameScript
             public StringProperty Alignment { get; } = new StringProperty("Alignment", "target", comment: "Alignment mode: none|target|gravity");
             public DoubleProperty MinPathDeviation { get; } = new DoubleProperty("MinPathDeviation", MIN_PATH_DEVIATION_DEFAULT, comment: "Distance from path to treat as on-course (m)");
             public DoubleProperty MaxPathDeviation { get; } = new DoubleProperty("MaxPathDeviation", MAX_PATH_DEVIATION_DEFAULT, comment: "Distance from path to fully snap back to path (m)");
-
+            public DoubleProperty RecomputeMasterPathDelay { get; } = new DoubleProperty("RecomputeMasterPathDelay", RECOMPUTE_MASTER_PATH_DELAY_DEFAULT, comment: "Delay before recomputing the master path (s)");
+            
             public PathfindingNavigationSection() : base("PathfindingNavigation")
             {
                 _properties.Add(MaxSpeed);
                 _properties.Add(Alignment);
                 _properties.Add(MinPathDeviation);
                 _properties.Add(MaxPathDeviation);
+                _properties.Add(RecomputeMasterPathDelay);
             }
         }
 
@@ -37,17 +40,18 @@ namespace IngameScript
         private const double MAX_SPEED_DEFAULT = 100.0;
         private const double MIN_PATH_DEVIATION_DEFAULT = 1.0;
         private const double MAX_PATH_DEVIATION_DEFAULT = 10.0;
+        private const double RECOMPUTE_MASTER_PATH_DELAY_DEFAULT = 5.0;
 
         private bool _initialized;
         private Navigation _navigation;
         private Alignment _alignment;
         private IMyRemoteControl _remoteControl;
+        private ITerminalProperty<int> _currentWaypointIndexProperty;
         private Action _onStart;
         private Action _onStop;
         private Action _onNoPath;
         private PathfindingNavigationSection _section;
         private NavigationState _navigationState = NavigationState.Idle;
-        private string _lastAlignmentModeWarning;
         #endregion
 
         #region Properties
@@ -70,6 +74,16 @@ namespace IngameScript
             {
                 errorMessage = "TestPathfinding: No remote control found!";
                 return false;
+            }
+
+            _currentWaypointIndexProperty = _remoteControl.GetProperty("CurrentWaypointIndex") as ITerminalProperty<int>;
+            if (_currentWaypointIndexProperty != null)
+            {
+                _currentWaypointIndexProperty.SetValue(_remoteControl, -1);
+            }
+            else
+            {
+                _remoteControl.Log("CurrentWaypointIndex property not found");
             }
 
             var timers = program.GetLocalBlocks<IMyTimerBlock>();
@@ -168,6 +182,81 @@ namespace IngameScript
             destinationProperty.SetValue(_remoteControl, destination);
         }
 
+        private List<Vector3D> ParsePath(bool dpr)
+        {
+            var propertyName = dpr ? "DPRPath" : "PathfinderPath";
+            var pathProperty = _remoteControl.GetProperty(propertyName) as ITerminalProperty<string>;
+            if (pathProperty == null)
+            {
+                return new List<Vector3D>();
+            }
+
+            var pathString = pathProperty.GetValue(_remoteControl);
+            if (string.IsNullOrEmpty(pathString))
+            {
+                return new List<Vector3D>();
+            }
+
+            var path = new List<Vector3D>();
+            ParsePathFromString(pathString, path);
+            return path;
+        }
+
+        private void ParsePathFromString(string pathString, List<Vector3D> path)
+        {
+            var segments = pathString.Split(new[] { ')' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (var segment in segments)
+            {
+                var point = segment.Trim();
+                if (point.Length == 0)
+                {
+                    continue;
+                }
+
+                if (point[0] == ',')
+                {
+                    point = point.Substring(1).Trim();
+                }
+
+                if (point.Length > 0 && point[0] == '(')
+                {
+                    point = point.Substring(1);
+                }
+
+                var coords = point.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+                if (coords.Length == 3)
+                {
+                    double x;
+                    double y;
+                    double z;
+                    if (double.TryParse(coords[0], out x) &&
+                        double.TryParse(coords[1], out y) &&
+                        double.TryParse(coords[2], out z))
+                    {
+                        path.Add(new Vector3D(x, y, z));
+                    }
+                }
+            }
+        }
+
+        private void SetCurrentWaypointIndex(int index)
+        {
+            if (_currentWaypointIndexProperty == null)
+            {
+                _currentWaypointIndexProperty = _remoteControl.GetProperty("CurrentWaypointIndex") as ITerminalProperty<int>;
+            }
+            _currentWaypointIndexProperty?.SetValue(_remoteControl, index);
+        }
+
+        private int GetCurrentWaypointIndexValue()
+        {
+            if (_currentWaypointIndexProperty == null)
+            {
+                _currentWaypointIndexProperty = _remoteControl.GetProperty("CurrentWaypointIndex") as ITerminalProperty<int>;
+            }
+            return _currentWaypointIndexProperty != null ? _currentWaypointIndexProperty.GetValue(_remoteControl) : -1;
+        }
+
         public void Start()
         {
             _remoteControl.Log("Starting pathfinding navigation");
@@ -213,6 +302,24 @@ namespace IngameScript
             _navigation.Stop();
             _alignment.Stop();
             TransitionTo(new IdleState(this));
+        }
+
+        public void RecomputePath()
+        {
+            if (_remoteControl == null)
+            {
+                return;
+            }
+
+            var action = _remoteControl.GetActionWithName("RecomputePath");
+            if (action != null)
+            {
+                action.Apply(_remoteControl);
+            }
+            else
+            {
+                _remoteControl.Log("RecomputePath action not found");
+            }
         }
         #endregion
 
@@ -276,95 +383,76 @@ namespace IngameScript
                 var pathStatusString = pathStatus.GetValue(_context._remoteControl);
                 if (pathStatusString == "Ready")
                 {
-                    var path = ParsePath();
-                    if (path.Count > 0)
+                    var path = _context.ParsePath(false);
+                    if (path.Count > 1)
                     {
                         _context.TransitionTo(new NavigatingState(_context, path));
                     }
-                    else
-                    {
-                        _context.TransitionTo(new IdleState(_context, NavigationState.NoPath));
-                    }
+                    // else wait for DPR
                 }
                 else if (pathStatusString == "NoPath")
                 {
-                    _context.TransitionTo(new IdleState(_context, NavigationState.NoPath));
+                    _context._remoteControl.Log("PathfindingNavigation: No path, scheduling recompute...");
+                    _context.TransitionTo(new WaitingForRecomputeState(_context));
                 }
             }
+        }
 
-            private List<Vector3D> ParsePath()
+        private class WaitingForRecomputeState : State<PathfindingNavigation>
+        {
+            private DateTime _readyAt;
+            private bool _recomputed;
+
+            public WaitingForRecomputeState(PathfindingNavigation context) : base(context)
             {
-                var path = new List<Vector3D>();
+            }
 
-                var pathProperty = _context._remoteControl.GetProperty("PathfinderPath") as ITerminalProperty<string>;
-                if (pathProperty == null)
+            public override void Enter()
+            {
+                var delaySeconds = Math.Max(0.0, _context._section.RecomputeMasterPathDelay.Value);
+                _recomputed = false;
+
+                if (delaySeconds > 0.0)
                 {
-                    _context._remoteControl.Log("PathfinderPath property not found");
-                    return path;
-                }
-
-                var pathString = pathProperty.GetValue(_context._remoteControl);
-                if (string.IsNullOrEmpty(pathString))
-                {
-                    return path;
-                }
-
-                var segments = pathString.Split(new[] { ')' }, StringSplitOptions.RemoveEmptyEntries);
-                foreach (var segment in segments)
-                {
-                    var point = segment.Trim();
-                    if (point.Length == 0)
-                    {
-                        continue;
-                    }
-
-                    if (point[0] == ',')
-                    {
-                        point = point.Substring(1).Trim();
-                    }
-
-                    if (point.Length > 0 && point[0] == '(')
-                    {
-                        point = point.Substring(1);
-                    }
-
-                    var coords = point.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
-                    if (coords.Length == 3)
-                    {
-                        double x;
-                        double y;
-                        double z;
-                        if (double.TryParse(coords[0], out x) &&
-                            double.TryParse(coords[1], out y) &&
-                            double.TryParse(coords[2], out z))
-                        {
-                            path.Add(new Vector3D(x, y, z));
-                        }
-                    }
-                }
-
-                if (path.Count == 0)
-                {
-                    _context._remoteControl.Log("No valid path coordinates found in PathfinderPath property");
+                    _readyAt = DateTime.Now + TimeSpan.FromSeconds(delaySeconds);
+                    _context._remoteControl.Log($"PathfindingNavigation: waiting {delaySeconds:F1}s before recompute");
                 }
                 else
                 {
-                    _context._remoteControl.Log($"Parsed {path.Count} waypoints from path");
+                    _readyAt = DateTime.Now;
+                }
+            }
+
+            public override void Execute()
+            {
+                if (_recomputed)
+                {
+                    return;
                 }
 
-                return path;
+                if (DateTime.Now < _readyAt)
+                {
+                    return;
+                }
+
+                _context._remoteControl.Log("PathfindingNavigation: requesting path recompute");
+                _context.RecomputePath();
+                _recomputed = true;
+                _context.TransitionTo(new WaitingForPathState(_context));
             }
         }
 
         private class NavigatingState : State<PathfindingNavigation>
         {
-            private List<Vector3D> _path;
-            private int _currentIndex = 1;
+            private List<Vector3D> _masterPath;
+            private List<Vector3D> _dprPath;
+            private int _dprWaypointIndex = 1;
+            private int _masterWaypointIndex = 1;
             private Vector3D _previousWaypoint;
 
             public NavigatingState(PathfindingNavigation context, List<Vector3D> path) : base(context)
             {
-                _path = path;
+                _masterPath = path;
                 _context._navigationState = NavigationState.Navigating;
             }
 
@@ -372,36 +460,63 @@ namespace IngameScript
             {
                 _context._navigation.Stop();
                 _context._alignment.Stop();
-                _currentIndex = 1;
+                _dprWaypointIndex = 1;
+                _masterWaypointIndex = 1;
                 _previousWaypoint = _context._remoteControl.GetPosition();
+                _context.SetCurrentWaypointIndex(_masterWaypointIndex);
             }
 
             public override void Execute()
             {
-                // Check if we have a valid path
-                if (_path.Count < 2)
+                // Check for DPR path updates
+                var dprPath = _context.ParsePath(true);
+                if (_dprPath == null || !dprPath.SequenceEqual(_dprPath))
                 {
-                    _context.TransitionTo(new IdleState(_context));
+                    _dprPath = dprPath;
+                    _dprWaypointIndex = 1;
+                    _previousWaypoint = _context._remoteControl.GetPosition();
+                    _masterWaypointIndex = _context.GetCurrentWaypointIndexValue();
+                }
+
+
+                // If no valid path, wait
+                if (_dprPath.Count < 2)
+                {
+                    _context._navigation.Stop();
+                    _context._alignment.Stop();
                     return;
                 }
 
                 // Check if we've reached the end of the path
-                if (_currentIndex >= _path.Count)
+                if (_masterWaypointIndex >= _masterPath.Count)
                 {
+                    _context.SetCurrentWaypointIndex(-1);
                     _context.Stop();
                     return;
                 }
 
                 // Navigate to current waypoint
-                var currentWaypoint = _path[_currentIndex];
+                var dprWaypoint = _dprPath[_dprWaypointIndex];
+                var masterWaypoint = _masterPath[_masterWaypointIndex];
                 var currentPosition = _context._remoteControl.GetPosition();
-                var target = _context.GetNavigationTarget(_previousWaypoint, currentWaypoint, currentPosition);
-                var distance = Vector3D.Distance(currentPosition, currentWaypoint);
+                var distanceToMaster = Vector3D.Distance(currentPosition, masterWaypoint);
+                var distanceToDpr = Vector3D.Distance(currentPosition, dprWaypoint);
+                // Check if we've arrived at the current waypoint (within 1m)
+                if (distanceToMaster < 1.0)
+                {
+                    // Move to next waypoint
+                    _masterWaypointIndex++;
+                    _context.SetCurrentWaypointIndex(_masterWaypointIndex);
+                    _dprPath = null;
+                    return; // Skip navigation this tick
+                }
+
+                var target = _context.GetNavigationTarget(_previousWaypoint, dprWaypoint, currentPosition);
                 var alignmentMode = _context.GetAlignmentMode();
                 switch (alignmentMode)
                 {
                     case "target":
-                        if (distance > _context._remoteControl.CubeGrid.GridSize * 2)
+                        if (distanceToDpr > _context._remoteControl.CubeGrid.GridSize * 2)
                         {
                             _context._alignment.AlignWithTarget(target);
                         }
@@ -411,20 +526,15 @@ namespace IngameScript
                         }
                         break;
                     case "gravity":
-                        _context.AlignWithGravityAndYaw(currentWaypoint);
+                        _context.AlignWithGravityAndYaw(dprWaypoint);
                         break;
                     default:
                         _context.AlignWithGravityOnly();
                         break;
                 }
-                if (_context._navigation.NavigateTo(
+                _context._navigation.NavigateTo(
                     target,
-                    _context._section.MaxSpeed.Value))
-                {
-                    // Move to next waypoint
-                    _currentIndex++;
-                    _previousWaypoint = currentWaypoint;
-                }
+                    _context._section.MaxSpeed.Value);
             }
         }
         #endregion
@@ -443,13 +553,7 @@ namespace IngameScript
                 return mode;
             }
 
-            if (_lastAlignmentModeWarning != mode)
-            {
-                _lastAlignmentModeWarning = mode;
-                _remoteControl.Log($"PathfindingNavigation: Unknown alignment mode '{mode}', defaulting to target");
-            }
-
-            return "target";
+            return "none";
         }
 
         private Vector3D GetNavigationTarget(Vector3D previousWaypoint, Vector3D currentWaypoint, Vector3D currentPosition)

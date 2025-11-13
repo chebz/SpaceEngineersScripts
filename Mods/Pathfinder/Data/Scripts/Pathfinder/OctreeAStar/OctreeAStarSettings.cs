@@ -54,6 +54,7 @@ namespace Pathfinder.OctreeAStar
         public DebugRenderSetting UnexploredSetting;
         public DebugRenderSetting OccupiedSetting;
         public DebugRenderSetting MeetSetting;
+        public DebugRenderSetting DynamicObstaclesSetting;
         public bool RenderOctants = true;
         public bool? RenderPath;
         public int MaxNodesPerFrame = 1;
@@ -64,7 +65,10 @@ namespace Pathfinder.OctreeAStar
         public double MinAltitude = 0.0;
         public double MaxRootSize = 1000.0;
         public double MinRootSize = 500.0;
+        public double MaxDPRRootSize = 250.0;
+        public double MinDPRRootSize = 125.0;
         public float PathRenderThickness = 0.2f;
+        public bool RenderDynamicObstacles = false;
     }
 
     public class OctreeAStarSettings
@@ -85,10 +89,14 @@ namespace Pathfinder.OctreeAStar
         private static readonly DebugRenderSetting DEFAULT_UNEXPLORED_SETTING = new DebugRenderSetting("Unexplored", true, Color.White, true, 0.02f);
         private static readonly DebugRenderSetting DEFAULT_OCCUPIED_SETTING = new DebugRenderSetting("Occupied", true, Color.Red, false, 0.02f);
         private static readonly DebugRenderSetting DEFAULT_MEET_SETTING = new DebugRenderSetting("Meet", true, Color.Yellow, true, 0.02f);
+        private static readonly DebugRenderSetting DEFAULT_DYNAMIC_OBSTACLES_SETTING = new DebugRenderSetting("DynamicObstacles", true, Color.Red, true, 0.02f);
         private const bool DEFAULT_RENDER_OCTANTS = false;
         private const bool DEFAULT_RENDER_PATH = false;
+        private const bool DEFAULT_RENDER_DYNAMIC_OBSTACLES = false;
         private const double DEFAULT_MAX_ROOT_SIZE = 1000.0;
         private const double DEFAULT_MIN_ROOT_SIZE = 500.0;
+        private const double DEFAULT_MAX_DPR_ROOT_SIZE = 250.0;
+        private const double DEFAULT_MIN_DPR_ROOT_SIZE = 125.0;
         private const float DEFAULT_PATH_RENDER_THICKNESS = 0.2f;
         private static DebugRenderSetting CloneSetting(DebugRenderSetting setting)
         {
@@ -103,8 +111,10 @@ namespace Pathfinder.OctreeAStar
         public DebugRenderSetting UnexploredSetting;
         public DebugRenderSetting MeetSetting;
         public DebugRenderSetting OccupiedSetting;
+        public DebugRenderSetting DynamicObstaclesSetting;
         public bool RenderOctants = DEFAULT_RENDER_OCTANTS;
         public bool RenderPath = DEFAULT_RENDER_PATH;
+        public bool RenderDynamicObstacles = DEFAULT_RENDER_DYNAMIC_OBSTACLES;
         public int MaxNodesPerFrame = DEFAULT_MAX_NODES_PER_FRAME;
         public double ExploreCostFactor = DEFAULT_EXPLORE_COST_FACTOR;
         public double ExploreCostFactorInTerrain = DEFAULT_EXPLORE_COST_FACTOR_IN_TERRAIN;
@@ -113,6 +123,8 @@ namespace Pathfinder.OctreeAStar
         public bool RenderPathEdges = false;
         public double MaxRootSize = DEFAULT_MAX_ROOT_SIZE;
         public double MinRootSize = DEFAULT_MIN_ROOT_SIZE;
+        public double MaxDPRRootSize = DEFAULT_MAX_DPR_ROOT_SIZE;
+        public double MinDPRRootSize = DEFAULT_MIN_DPR_ROOT_SIZE;
         public float PathRenderThickness = DEFAULT_PATH_RENDER_THICKNESS;
 
         private OctreeAStarSettings()
@@ -144,6 +156,7 @@ namespace Pathfinder.OctreeAStar
             OccupiedSetting = CloneSetting(DEFAULT_OCCUPIED_SETTING);
             RenderOctants = DEFAULT_RENDER_OCTANTS;
             RenderPath = DEFAULT_RENDER_PATH;
+            RenderDynamicObstacles = DEFAULT_RENDER_DYNAMIC_OBSTACLES;
             MaxNodesPerFrame = DEFAULT_MAX_NODES_PER_FRAME;
             ExploreCostFactor = DEFAULT_EXPLORE_COST_FACTOR;
             ExploreCostFactorInTerrain = DEFAULT_EXPLORE_COST_FACTOR_IN_TERRAIN;
@@ -151,6 +164,8 @@ namespace Pathfinder.OctreeAStar
             MaxPathOptimizationSteps = DEFAULT_MAX_PATH_OPTIMIZATION_STEPS;
             MaxRootSize = DEFAULT_MAX_ROOT_SIZE;
             MinRootSize = DEFAULT_MIN_ROOT_SIZE;
+            MaxDPRRootSize = DEFAULT_MAX_DPR_ROOT_SIZE;
+            MinDPRRootSize = DEFAULT_MIN_DPR_ROOT_SIZE;
             PathRenderThickness = DEFAULT_PATH_RENDER_THICKNESS;
         }
 
@@ -266,6 +281,16 @@ namespace Pathfinder.OctreeAStar
                     MeetSetting = settingsData.MeetSetting; 
                 }
 
+                if (settingsData.DynamicObstaclesSetting == null)
+                {
+                    DynamicObstaclesSetting = CloneSetting(DEFAULT_DYNAMIC_OBSTACLES_SETTING);
+                    wroteDefaults = true;
+                }
+                else
+                {
+                    DynamicObstaclesSetting = settingsData.DynamicObstaclesSetting;
+                }
+
                 MaxNodesPerFrame = settingsData.MaxNodesPerFrame > 0 ? settingsData.MaxNodesPerFrame : DEFAULT_MAX_NODES_PER_FRAME;
                 if (settingsData.MaxNodesPerFrame <= 0) 
                 {
@@ -334,6 +359,26 @@ namespace Pathfinder.OctreeAStar
                     MinRootSize = settingsData.MinRootSize;
                 }
 
+                if (settingsData.MaxDPRRootSize <= 0)
+                {
+                    MaxDPRRootSize = DEFAULT_MAX_DPR_ROOT_SIZE;
+                    wroteDefaults = true;
+                }
+                else
+                {
+                    MaxDPRRootSize = settingsData.MaxDPRRootSize;
+                }
+
+                if (settingsData.MinDPRRootSize <= 0)
+                {
+                    MinDPRRootSize = DEFAULT_MIN_DPR_ROOT_SIZE;
+                    wroteDefaults = true;
+                }
+                else
+                {
+                    MinDPRRootSize = settingsData.MinDPRRootSize;
+                }
+
                 if (settingsData.PathRenderThickness <= 0f)
                 {
                     PathRenderThickness = DEFAULT_PATH_RENDER_THICKNESS;
@@ -381,7 +426,10 @@ namespace Pathfinder.OctreeAStar
                     MaxPathOptimizationSteps = MaxPathOptimizationSteps,
                     MaxRootSize = MaxRootSize,
                     MinRootSize = MinRootSize,
+                    MaxDPRRootSize = MaxDPRRootSize,
+                    MinDPRRootSize = MinDPRRootSize,
                     PathRenderThickness = PathRenderThickness,
+                    RenderDynamicObstacles = RenderDynamicObstacles,
                 };
 
                 string xmlContent = MyAPIGateway.Utilities.SerializeToXML(settingsData);

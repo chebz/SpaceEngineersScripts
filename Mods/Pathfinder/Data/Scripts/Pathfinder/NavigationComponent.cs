@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
 using Sandbox.ModAPI;
+using Sandbox.ModAPI.Interfaces;
 using VRage.Game.Components;
 using VRageMath;
 using VRageRender;
@@ -39,6 +40,8 @@ namespace Pathfinder
         private const double POSITION_EPSILON = 0.1;
         private double _minAltitude = DEFAULT_MIN_ALTITUDE;
         private double _maxAltitude = DEFAULT_MAX_ALTITUDE;
+        private readonly DynamicPathRefinement _dynamicPathRefinement = new DynamicPathRefinement();
+        private int _currentWaypointIndex = -1;
 
         public bool NeedsRecompute
         {
@@ -104,6 +107,14 @@ namespace Pathfinder
                 Save();
             }
         }
+
+        public Graph Graph => _graph;
+
+        public Sandbox.ModAPI.IMyRemoteControl RemoteControl => _remoteControl;
+
+        public int CurrentWaypointIndex => _currentWaypointIndex;
+
+        public string RefinedPathString => _dynamicPathRefinement.RefinedPathString;
         
         // for debugging
         public void Step()
@@ -143,11 +154,14 @@ namespace Pathfinder
 
             FindPath();
             _graph.Render();
+            _dynamicPathRefinement.Update(this);
         }
 
         public override void UpdateBeforeSimulation100()
         {
             OctreeAStarSettings.Instance.Update();
+
+            _dynamicPathRefinement.RefinePath(this);
         }
 
         private void FindPath()
@@ -344,6 +358,16 @@ namespace Pathfinder
                 return _graph.Path.state.ToString();
             }
             return Path.State.NotStarted.ToString();
+        }
+
+        public void SetCurrentWaypointIndex(int index)
+        {
+            _currentWaypointIndex = index;
+        }
+
+        public string GetRefinedPathString()
+        {
+            return _dynamicPathRefinement.RefinedPathString;
         }
     }
 }
