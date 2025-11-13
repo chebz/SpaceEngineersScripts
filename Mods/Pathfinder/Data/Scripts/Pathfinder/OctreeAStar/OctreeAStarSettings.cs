@@ -1,6 +1,7 @@
 using VRageMath;
 using System;
 using Sandbox.ModAPI;
+using Pathfinder;
 
 namespace Pathfinder.OctreeAStar
 {
@@ -55,8 +56,8 @@ namespace Pathfinder.OctreeAStar
         public DebugRenderSetting OccupiedSetting;
         public DebugRenderSetting MeetSetting;
         public DebugRenderSetting DynamicObstaclesSetting;
-        public bool RenderOctants = true;
-        public bool? RenderPath;
+        public bool RenderOctants = false;
+        public bool? RenderPath = true;
         public int MaxNodesPerFrame = 1;
         public double ExploreCostFactor = 0.75;
         public double ExploreCostFactorInTerrain = 10.0;
@@ -69,6 +70,7 @@ namespace Pathfinder.OctreeAStar
         public double MinDPRRootSize = 125.0;
         public float PathRenderThickness = 0.2f;
         public bool RenderDynamicObstacles = false;
+        public bool ShowPathfinderMessages = false;
     }
 
     public class OctreeAStarSettings
@@ -126,6 +128,7 @@ namespace Pathfinder.OctreeAStar
         public double MaxDPRRootSize = DEFAULT_MAX_DPR_ROOT_SIZE;
         public double MinDPRRootSize = DEFAULT_MIN_DPR_ROOT_SIZE;
         public float PathRenderThickness = DEFAULT_PATH_RENDER_THICKNESS;
+        public bool ShowPathfinderMessages = true;
 
         private OctreeAStarSettings()
         {
@@ -143,6 +146,8 @@ namespace Pathfinder.OctreeAStar
                 return _instance;
             }
         }
+
+        public static bool AreMessagesEnabled => _instance?.ShowPathfinderMessages ?? true;
 
         private void InitializeDefaults()
         {
@@ -167,6 +172,7 @@ namespace Pathfinder.OctreeAStar
             MaxDPRRootSize = DEFAULT_MAX_DPR_ROOT_SIZE;
             MinDPRRootSize = DEFAULT_MIN_DPR_ROOT_SIZE;
             PathRenderThickness = DEFAULT_PATH_RENDER_THICKNESS;
+            ShowPathfinderMessages = true;
         }
 
 
@@ -178,7 +184,7 @@ namespace Pathfinder.OctreeAStar
                 {
                     InitializeDefaults();
                     Save();
-                    MyAPIGateway.Utilities.ShowMessage("Pathfinder", $"Created default settings file: {SETTINGS_FILE}");
+                    Utils.ShowHudMessage($"Created default settings file: {SETTINGS_FILE}");
                     return;
                 }
 
@@ -190,23 +196,27 @@ namespace Pathfinder.OctreeAStar
 
                 if (string.IsNullOrEmpty(xmlContent))
                 {
-                    MyAPIGateway.Utilities.ShowMessage("Pathfinder", "Settings file is empty, restoring defaults");
+                    Utils.ShowHudMessage("Settings file is empty, restoring defaults");
                     InitializeDefaults();
                     Save();
                     return;
                 }
+
+                bool showMessagesSpecified = xmlContent.IndexOf("ShowPathfinderMessages", StringComparison.OrdinalIgnoreCase) >= 0;
 
                 OctreeAStarSettingsData settingsData = MyAPIGateway.Utilities.SerializeFromXML<OctreeAStarSettingsData>(xmlContent);
 
                 if (settingsData == null)
                 {
-                    MyAPIGateway.Utilities.ShowMessage("Pathfinder", "No valid settings found, restoring defaults");
+                    Utils.ShowHudMessage("No valid settings found, restoring defaults");
                     InitializeDefaults();
                     Save();
                     return;
                 }
 
-                bool wroteDefaults = false;
+                ShowPathfinderMessages = settingsData.ShowPathfinderMessages;
+
+                bool wroteDefaults = !showMessagesSpecified;
 
                 if (settingsData.OpenSetting == null) 
                 { 
@@ -397,7 +407,7 @@ namespace Pathfinder.OctreeAStar
             }
             catch (Exception ex)
             {
-                MyAPIGateway.Utilities.ShowMessage("Pathfinder", $"Error loading settings: {ex.Message}. Restoring defaults.");
+                Utils.ShowHudMessage($"Error loading settings: {ex.Message}. Restoring defaults.");
                 InitializeDefaults();
                 Save();
             }
@@ -430,6 +440,7 @@ namespace Pathfinder.OctreeAStar
                     MinDPRRootSize = MinDPRRootSize,
                     PathRenderThickness = PathRenderThickness,
                     RenderDynamicObstacles = RenderDynamicObstacles,
+                    ShowPathfinderMessages = ShowPathfinderMessages,
                 };
 
                 string xmlContent = MyAPIGateway.Utilities.SerializeToXML(settingsData);
@@ -441,7 +452,7 @@ namespace Pathfinder.OctreeAStar
             }
             catch (Exception ex)
             {
-                MyAPIGateway.Utilities.ShowMessage("Pathfinder", $"Error saving settings: {ex.Message}");
+                Utils.ShowHudMessage($"Error saving settings: {ex.Message}");
             }
         }
 

@@ -217,12 +217,12 @@ namespace Pathfinder.OctreeAStar
             }
 
             _refinedPath.Render(Color.Red, false);
-            Utils.DrawOBB(_pathObb, Color.Beige, true);
-            for (int i = 0; i < _velocityObstacles.Count; i++)
-            {
-                var color = i == _blockedVOIndex ? Color.Red : Color.Green;
-                Utils.DrawOBB(_velocityObstacles[i], color, true);
-            }
+            // Utils.DrawOBB(_pathObb, Color.Beige, true);
+            // for (int i = 0; i < _velocityObstacles.Count; i++)
+            // {
+            //     var color = i == _blockedVOIndex ? Color.Red : Color.Green;
+            //     Utils.DrawOBB(_velocityObstacles[i], color, true);
+            // }
         }
 
         private void BuildDynamicObstacles(NavigationComponent navigation, double timeHorizon)

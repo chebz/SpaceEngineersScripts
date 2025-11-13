@@ -56,6 +56,16 @@ namespace Pathfinder
             _log.Log(severity, format, args);
             _log.Flush();
         }
+
+        public static void ShowHudMessage(string message, bool force = false)
+        {
+            if (!force && !OctreeAStarSettings.AreMessagesEnabled)
+            {
+                return;
+            }
+
+            MyAPIGateway.Utilities.ShowMessage("Pathfinder", message);
+        }
         #endregion
 
         #region Debug Render
@@ -166,7 +176,7 @@ namespace Pathfinder
             foreach (var frame in _callFrames)
             {
                 var duration = frame.Value.Duration.TotalSeconds;
-                MyAPIGateway.Utilities.ShowMessage("Pathfinder", $"{frame.Key}: {duration:F3}s, {frame.Value.CallCount} calls");
+                ShowHudMessage($"{frame.Key}: {duration:F3}s, {frame.Value.CallCount} calls");
             }
         }
         #endregion

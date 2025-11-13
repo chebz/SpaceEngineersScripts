@@ -182,7 +182,7 @@ namespace Pathfinder
                 _graph.BeginFindPath(_remoteControl, start, destination, MinAltitude, MaxAltitude);
                 _pathStartTime = DateTime.Now;
                 _lastStartPosition = start;
-                MyAPIGateway.Utilities.ShowMessage("Pathfinder", $"Starting pathfinding to GPS '{_destination.Value}'");
+                Utils.ShowHudMessage($"Starting pathfinding to GPS '{_destination.Value}'");
             }
 
             if (_graph.Path == null || _graph.Path.state != Path.State.Calculating)
@@ -194,11 +194,11 @@ namespace Pathfinder
             if (_graph.Path.state == Path.State.Ready)
             {
                 var elapsed = (DateTime.Now - _pathStartTime).TotalSeconds;
-                MyAPIGateway.Utilities.ShowMessage("Pathfinder", $"Path found in {elapsed:F3} seconds");
+                Utils.ShowHudMessage($"Path found in {elapsed:F3} seconds");
             }
             else if (_graph.Path.state == Path.State.NoPath)
             {
-                MyAPIGateway.Utilities.ShowMessage("Pathfinder", "No path found");
+                Utils.ShowHudMessage("No path found");
             }
         }
 

@@ -11,6 +11,7 @@ using VRage.Render;
 using VRage.Utils;
 using VRageRender;
 using VRage.Game;
+using Pathfinder;
 
 namespace Pathfinder
 {
@@ -274,11 +275,11 @@ namespace Pathfinder
             }
             if (_isPathCalculated)
             {
-                MyAPIGateway.Utilities.ShowMessage("Pathfinder", "Pathfinding not started or already calculated");
+                Utils.ShowHudMessage("Pathfinding not started or already calculated");
                 return;
             }
 
-            MyAPIGateway.Utilities.ShowMessage("Pathfinder", $"Pathfinding open: {_openSet.Count}, closed: {_closedSet.Count}, nodes explored: {_nodesExplored}");
+            Utils.ShowHudMessage($"Pathfinding open: {_openSet.Count}, closed: {_closedSet.Count}, nodes explored: {_nodesExplored}");
 
             var endGrid = WorldToGrid(_pathfindingEnd);
             var clampedEndGrid = ClampToGridBounds(endGrid);
@@ -311,7 +312,7 @@ namespace Pathfinder
                     _calculatedPath = ReconstructPath(_cameFrom, current, true);
                     _isPathfinding = false;
                     _isPathCalculated = true;
-                    MyAPIGateway.Utilities.ShowMessage("Pathfinder", $"Pathfinding reached destination in {_nodesExplored} nodes");
+                    Utils.ShowHudMessage($"Pathfinding reached destination in {_nodesExplored} nodes");
                     return;
                 }
 
@@ -321,7 +322,7 @@ namespace Pathfinder
                     _calculatedPath = ReconstructPath(_cameFrom, current, true);
                     _isPathfinding = false;
                     _isPathCalculated = true;
-                    MyAPIGateway.Utilities.ShowMessage("Pathfinder", $"Pathfinding reached destination in {_nodesExplored} nodes");
+                    Utils.ShowHudMessage($"Pathfinding reached destination in {_nodesExplored} nodes");
                     return;
                 }
 
@@ -394,7 +395,7 @@ namespace Pathfinder
                 _partialPath.Clear(); // Clear partial path after completion
                 _isPathfinding = false;
                 _isPathCalculated = true;
-                MyAPIGateway.Utilities.ShowMessage("Pathfinder", $"Pathfinding node limit reached in {_nodesExplored} nodes");
+                Utils.ShowHudMessage($"Pathfinding node limit reached in {_nodesExplored} nodes");
                 return;
             }
             
@@ -404,7 +405,7 @@ namespace Pathfinder
                 _partialPath.Clear(); // Clear partial path
                 _isPathfinding = false;
                 _isPathCalculated = true;
-                MyAPIGateway.Utilities.ShowMessage("Pathfinder", $"Pathfinding no more nodes to explore in {_nodesExplored} nodes");
+                Utils.ShowHudMessage($"Pathfinding no more nodes to explore in {_nodesExplored} nodes");
             }
         }
 
@@ -463,7 +464,7 @@ namespace Pathfinder
                     break;
                 attempts++;
             }
-            MyAPIGateway.Utilities.ShowMessage("Pathfinder", $"OptimizePath: Attempts: {attempts}");
+            Utils.ShowHudMessage($"OptimizePath: Attempts: {attempts}");
         }
 
         private void ReducePath(List<Vector3D> path)

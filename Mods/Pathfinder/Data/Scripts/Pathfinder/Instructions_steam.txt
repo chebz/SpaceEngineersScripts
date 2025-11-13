@@ -15,7 +15,7 @@ Pathfinder is an alpha-stage navigation mod that embeds a bi-directional octree 
 [/list]
 
 [h2]Terminal Properties[/h2]
-Access the hidden properties via [b]IMyTerminalProperty&lt;T&gt;[/b] from programmable blocks:
+Access the hidden properties via [b]IMyTerminalProperty<>[/b] from programmable blocks:
 [list]
 [*] [b]PathfinderDestination[/b] ([b]Vector3D?[/b]): Set a world-space target. [i]null[/i] clears the destination.
 [*] [b]PathfinderPath[/b] ([b]string[/b], read-only): Serialized master path ([i](X,Y,Z)[/i] segments).
@@ -43,6 +43,10 @@ For a working example, study the [url=https://steamcommunity.com/sharedfiles/fil
 [*] use [b]CurrentWaypointIndex[/b] to stay in sync with the dynamic refinement
 [*] respond to success/failure callbacks via terminal actions
 [/list]
+[list]
+[*] Source code (mod): [url=https://github.com/chebz/SpaceEngineersScripts/tree/PathNav/Mods/Pathfinder]GitHub - Pathfinder[/url]
+[*] Source code (demo script): [url=https://github.com/chebz/SpaceEngineersScripts/tree/PathNav/Scripts/PathfinderPatrol]GitHub - PathfinderPatrol[/url]
+[/list]
 
 [h2]Testing & Usage Tips[/h2]
 [list=1]
@@ -54,7 +58,7 @@ destProp?.SetValue(remote, new Vector3D(0, 0, 0));
 [/code]
 [*] Poll [b]PathfinderStatus[/b] each tick; when it returns [i]Ready[/i], parse [b]PathfinderPath[/b] or [b]DPRPath[/b] and feed the waypoints to your navigation logic.
 [*] Call [b]RecomputePath[/b] whenever you change destination or detect significant drift.
-[*] For global defaults, edit [b]PathfinderSettings.xml[/b] in the world storage folder ([b]Storage/Pathfinder/PathfinderSettings.xml[/b]) after Pathfinder has run once. The file controls [b]OctreeAStarSettings[/b] such as octant debug drawing, node budgets, and DPR parameters.
+[*] For global defaults, edit [b]PathfinderSettings.xml[/b] in the world storage folder ([b]Storage/Pathfinder/PathfinderSettings.xml[/b]) after Pathfinder has run once. The file controls [b]OctreeAStarSettings[/b] such as octant debug drawing, node budgets, DPR parameters, and the [b]ShowPathfinderMessages[/b] toggle (set it to [i]false[/i] to silence HUD notifications).
 [/list]
 
 [h2]Feedback[/h2]

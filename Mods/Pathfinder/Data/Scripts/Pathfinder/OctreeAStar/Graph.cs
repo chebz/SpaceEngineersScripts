@@ -5,6 +5,7 @@ using Sandbox.ModAPI;
 using VRage.Game.ModAPI;
 using VRage.Utils;
 using VRageMath;
+using Pathfinder;
 
 namespace Pathfinder.OctreeAStar
 {
@@ -221,7 +222,7 @@ namespace Pathfinder.OctreeAStar
             // try to find the closest bounds to End that is Empty
             if (!TryFindEnd())
             {
-                MyAPIGateway.Utilities.ShowMessage("Pathfinder", "No path found, end point is not reachable");
+                Utils.ShowHudMessage("No path found, end point is not reachable");
                 Path.state = Path.State.NoPath;
                 return;
             }
@@ -311,12 +312,12 @@ namespace Pathfinder.OctreeAStar
         {
             if (Path == null)
             {
-                MyAPIGateway.Utilities.ShowMessage("Pathfinder", "No path to find");
+                Utils.ShowHudMessage("No path to find");
                 return;
             }
             if (Path.state != Path.State.Calculating)
             {
-                MyAPIGateway.Utilities.ShowMessage("Pathfinder", "Path is not calculating");
+                Utils.ShowHudMessage("Path is not calculating");
                 return;
             }
 
@@ -356,7 +357,7 @@ namespace Pathfinder.OctreeAStar
                     }
 
                     Path.state = Path.State.NoPath;
-                    MyAPIGateway.Utilities.ShowMessage("Pathfinder", "No path found");
+                    Utils.ShowHudMessage("No path found");
                     return;
                 }
             }
@@ -380,7 +381,7 @@ namespace Pathfinder.OctreeAStar
                     }
 
                     Path.state = Path.State.NoPath;
-                    MyAPIGateway.Utilities.ShowMessage("Pathfinder", "No path found");
+                    Utils.ShowHudMessage("No path found");
                     return;
                 }
 

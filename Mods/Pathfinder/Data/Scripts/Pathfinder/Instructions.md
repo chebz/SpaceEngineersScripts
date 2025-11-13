@@ -63,7 +63,8 @@ For a working example, study the **[PathfinderPatrol](https://steamcommunity.com
 4. Call `RecomputePath` whenever you change destination or detect significant drift.
 5. For global defaults, edit **PathfinderSettings.xml** in the world storage folder
    (`Storage/Pathfinder/PathfinderSettings.xml`) after Pathfinder has run once. The file controls
-   `OctreeAStarSettings` such as octant debug drawing, node budgets, and DPR parameters.
+   `OctreeAStarSettings` such as octant debug drawing, node budgets, DPR parameters, and the
+   `ShowPathfinderMessages` toggle (set it to `false` to silence HUD notifications).
 
 ## Feedback
 
