@@ -1,0 +1,19 @@
+[h1]PathfinderNavigation – Control Script[/h1]
+
+Programmable block script that issues commands to the Pathfinder mod.
+
+[b]Commands[/b]
+[list]
+[*] [b]start[/b]
+[*] [b]start GPS:Name:X:Y:Z:[/b]
+[*] [b]start GPS:Name:X:Y:Z: PBName[/b]
+[*] [b]stop[/b]
+[/list]
+
+Links:
+[list]
+[*] Pathfinder mod: [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3597348725]Workshop – Pathfinder[/url]
+[*] Script source: [url=https://github.com/chebz/SpaceEngineersScripts/tree/PathNav/Scripts/PathfinderNavigation]GitHub – PathfinderNavigation[/url]
+[*] Example usage: [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3604823270]PathfinderPatrol[/url]
+[/list]
+

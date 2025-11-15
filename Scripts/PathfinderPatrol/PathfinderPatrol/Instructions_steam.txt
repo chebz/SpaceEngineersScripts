@@ -1,0 +1,4 @@
+[h1]PathfinderPatrol[/h1]
+
+Demo programmable block script that drives the [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3597348725]Pathfinder – Bi-directional Octree A*[/url] mod. It simply alternates between two GPS points by forwarding commands to the Pathfinder navigation PB, showing how to integrate the mod from in-game scripts.
+

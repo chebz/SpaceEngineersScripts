@@ -1,6 +1,7 @@
 using Sandbox.ModAPI.Ingame;
 using System;
 using VRageMath;
+using System.Collections.Generic;
 
 namespace IngameScript
 {
@@ -39,16 +40,18 @@ namespace IngameScript
         private IMyRemoteControl _remoteControl;
         private IMyBroadcastListener _broadcastListener;
         private IMyUnicastListener _unicastListener;
-        private long _stationPbId;
+        private long _stationSourceId;
+        private string _targetStationName = "*";
         private string _requestedConnectorName = "*";
         private AutoDockDroneSection _section;
         private Action _onDocked;
         private Action _onUndocked;
+        private List<IMyBatteryBlock> _batteryBlocks = new List<IMyBatteryBlock>();
         #endregion
 
         #region Methods
 
-        public bool Initialize(Program program, CustomDataConnector customDataConnector, Navigation navigation, Alignment alignment, PathfindingNavigation pathfinderNavigation, out string errorMessage)
+        public bool Initialize(Program program, CustomDataConnector customDataConnector, Navigation navigation, Alignment alignment, out string errorMessage)
         {
             _program = program;
             _navigation = navigation;
@@ -66,6 +69,13 @@ namespace IngameScript
             if (connectors.Count == 0)
             {
                 errorMessage = "No connector with [AD] tag found";
+                return false;
+            }
+
+            _batteryBlocks = program.GetLocalBlocks<IMyBatteryBlock>();
+            if (_batteryBlocks.Count == 0)
+            {
+                errorMessage = "No battery blocks found";
                 return false;
             }
 
@@ -107,6 +117,7 @@ namespace IngameScript
         {
             if (!_initialized)
             {
+                _program.Echo("AutoDockDrone not initialized"); 
                 return;
             }
 
@@ -195,6 +206,16 @@ namespace IngameScript
             return connectorName;
         }
 
+        private string NormalizeStationName(string stationName)
+        {
+            if (string.IsNullOrWhiteSpace(stationName))
+            {
+                return "*";
+            }
+
+            return stationName.Trim();
+        }
+
         public void DockToNearest(string connectorName)
         {
             if (!_initialized)
@@ -210,25 +231,29 @@ namespace IngameScript
             }
 
             _requestedConnectorName = NormalizeConnectorName(connectorName);
-            TransitionTo(new RequestingApproachState(this, 0, true));
+            _targetStationName = "*";
+            TransitionTo(new RequestingApproachState(this, "*"));
         }
 
-        public void DockToStation(long stationPbId, string connectorName)
+        public void DockToStation(string stationName, string connectorName)
         {
             if (!_initialized)
             {
                 return;
             }
 
+            var normalizedStationName = NormalizeStationName(stationName);
             if (CurrentState is UndockedState)
             {
                 _requestedConnectorName = NormalizeConnectorName(connectorName);
-                TransitionTo(new RequestingApproachState(this, stationPbId, false));
+                _targetStationName = normalizedStationName;
+                TransitionTo(new RequestingApproachState(this, normalizedStationName));
             }
             else if (CurrentState is DockedState)
             {
                 _requestedConnectorName = NormalizeConnectorName(connectorName);
-                TransitionTo(new UndockingState(this, stationPbId));
+                _targetStationName = normalizedStationName;
+                TransitionTo(new UndockingState(this, normalizedStationName));
             }
             else
             {
@@ -287,17 +312,30 @@ namespace IngameScript
         {
             return CurrentState is UndockedState;
         }
+
+        private void SetBatteryRechargeMode(bool recharge)
+        {
+            foreach (var battery in _batteryBlocks)
+            {
+                if (battery == null)
+                {
+                    continue;
+                }
+
+                battery.ChargeMode = recharge ? ChargeMode.Recharge : ChargeMode.Auto;
+            }
+        }
         #endregion
 
         #region Types
 
         private class UndockedState : State<AutoDockDrone>
         {
-            private long _nextStationPbId;
+            private readonly string _nextStationName;
 
-            public UndockedState(AutoDockDrone context, long nextStationPbId = 0) : base(context)
+            public UndockedState(AutoDockDrone context, string nextStationName = null) : base(context)
             {
-                _nextStationPbId = nextStationPbId;
+                _nextStationName = nextStationName;
             }
 
             public override void Enter()
@@ -306,10 +344,11 @@ namespace IngameScript
                 _context._alignment.Stop();
                 _context.InvokeUndocked();
 
-                if (_nextStationPbId != 0)
+                if (!string.IsNullOrEmpty(_nextStationName) && _nextStationName != "*")
                 {
-                    _context._program.Echo($"Transitioning to dock to station {_nextStationPbId}");
-                    _context.TransitionTo(new RequestingApproachState(_context, _nextStationPbId, false));
+                    _context._program.Echo($"Transitioning to dock to station {_nextStationName}");
+                    _context._targetStationName = _nextStationName;
+                    _context.TransitionTo(new RequestingApproachState(_context, _nextStationName));
                 }
             }
 
@@ -327,6 +366,7 @@ namespace IngameScript
                 _context._navigation.Stop();
                 _context._alignment.Stop();
                 _context._navigation.PowerOff();
+                _context.SetBatteryRechargeMode(true);
                 _context.InvokeDocked();
             }
 
@@ -337,29 +377,20 @@ namespace IngameScript
 
         private class RequestingApproachState : State<AutoDockDrone>
         {
-            private long _stationPbId;
-            private bool _isBroadcast;
+            private readonly string _targetStationName;
 
-            public RequestingApproachState(AutoDockDrone context, long stationPbId, bool isBroadcast) : base(context)
+            public RequestingApproachState(AutoDockDrone context, string targetStationName) : base(context)
             {
-                _stationPbId = stationPbId;
-                _isBroadcast = isBroadcast;
+                _targetStationName = targetStationName;
             }
 
             public override void Enter()
             {
                 _context._program.Echo("Requesting approach");
                 var droneName = _context._program.Me.CubeGrid.CustomName;
-                var message = $"requestdocking|{droneName}|{_context._requestedConnectorName}";
-                
-                if (_isBroadcast)
-                {
-                    _context._program.IGC.SendBroadcastMessage(BROADCAST_TAG, message);
-                }
-                else
-                {
-                    _context._program.IGC.SendUnicastMessage(_stationPbId, BROADCAST_TAG, message);
-                }
+                _context._stationSourceId = 0;
+                var message = $"requestdocking|{droneName}|{_context._requestedConnectorName}|{_targetStationName}";
+                _context._program.IGC.SendBroadcastMessage(BROADCAST_TAG, message);
             }
 
             public override void Execute()
@@ -382,6 +413,7 @@ namespace IngameScript
                         var vz = double.Parse(parts[6]);
                         var stationVelocity = new Vector3D(vx, vy, vz);
 
+                        _context._stationSourceId = source;
                         _context.TransitionTo(new NavigatingToApproachState(_context, approachPos, stationVelocity, source));
                     }
                 }
@@ -398,11 +430,11 @@ namespace IngameScript
             private Vector3D _approachPosition;
             private Vector3D _stationVelocity;
 
-            public NavigatingToApproachState(AutoDockDrone context, Vector3D approachPosition, Vector3D stationVelocity, long stationPbId) : base(context)
+            public NavigatingToApproachState(AutoDockDrone context, Vector3D approachPosition, Vector3D stationVelocity, long stationSourceId) : base(context)
             {
                 _approachPosition = approachPosition;
                 _stationVelocity = stationVelocity;
-                _context._stationPbId = stationPbId;
+                _context._stationSourceId = stationSourceId;
             }
 
             public override void Enter()
@@ -444,7 +476,10 @@ namespace IngameScript
             public override void Enter()
             {
                 _context._program.Echo("Requesting dock coordinate");
-                _context._program.IGC.SendUnicastMessage(_context._stationPbId, BROADCAST_TAG, "requestdockcoord");
+                if (_context._stationSourceId != 0)
+                {
+                    _context._program.IGC.SendUnicastMessage(_context._stationSourceId, BROADCAST_TAG, "requestdockcoord");
+                }
             }
 
             public override void Execute()
@@ -480,7 +515,7 @@ namespace IngameScript
                 else if (message == "denied")
                 {
                     _context._program.Echo("Docking denied, re-requesting approach...");
-                    _context.TransitionTo(new RequestingApproachState(_context, _context._stationPbId, false));
+                    _context.TransitionTo(new RequestingApproachState(_context, _context._targetStationName));
                 }
             }
         }
@@ -600,11 +635,11 @@ namespace IngameScript
         {
             private const double UNDOCK_DISTANCE = 10.0;
             private Vector3D _undockPosition;
-            private long _nextStationPbId;
+            private readonly string _nextStationName;
 
-            public UndockingState(AutoDockDrone context, long nextStationPbId = 0) : base(context)
+            public UndockingState(AutoDockDrone context, string nextStationName = null) : base(context)
             {
-                _nextStationPbId = nextStationPbId;
+                _nextStationName = nextStationName;
             }
 
             public override void Enter()
@@ -616,6 +651,7 @@ namespace IngameScript
                     _context.TransitionTo(new UndockedState(_context));
                     return;
                 }
+                _context.SetBatteryRechargeMode(false);
                 var connectorForward = _context._connector.WorldMatrix.Forward;
                 var currentPos = _context._connector.GetPosition();
                 _undockPosition = currentPos - (connectorForward * UNDOCK_DISTANCE);
@@ -627,7 +663,7 @@ namespace IngameScript
             {
                 if (_context._navigation.NavigateTo(_undockPosition, 10.0, 1.0))
                 {
-                    _context.TransitionTo(new UndockedState(_context, _nextStationPbId));
+                    _context.TransitionTo(new UndockedState(_context, _nextStationName));
                 }
             }
         }

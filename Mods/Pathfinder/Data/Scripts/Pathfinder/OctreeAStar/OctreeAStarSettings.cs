@@ -63,7 +63,6 @@ namespace Pathfinder.OctreeAStar
         public double ExploreCostFactorInTerrain = 10.0;
         public double AltitudeCostFactor = 1.0;
         public int MaxPathOptimizationSteps = 100;
-        public double MinAltitude = 0.0;
         public double MaxRootSize = 1000.0;
         public double MinRootSize = 500.0;
         public double MaxDPRRootSize = 250.0;
@@ -71,6 +70,8 @@ namespace Pathfinder.OctreeAStar
         public float PathRenderThickness = 0.2f;
         public bool RenderDynamicObstacles = false;
         public bool ShowPathfinderMessages = false;
+        public double DPRMinAltitude = 50.0;
+        public double DPRStepSize = 50.0;
     }
 
     public class OctreeAStarSettings
@@ -100,6 +101,8 @@ namespace Pathfinder.OctreeAStar
         private const double DEFAULT_MAX_DPR_ROOT_SIZE = 250.0;
         private const double DEFAULT_MIN_DPR_ROOT_SIZE = 125.0;
         private const float DEFAULT_PATH_RENDER_THICKNESS = 0.2f;
+        private const double DEFAULT_DPR_MIN_ALTITUDE = 50.0;
+        private const double DEFAULT_DPR_STEP_SIZE = 50.0;
         private static DebugRenderSetting CloneSetting(DebugRenderSetting setting)
         {
             return new DebugRenderSetting(setting.Name, setting.ShouldShow, setting.Color, setting.Wireframe, setting.LineThickness);
@@ -129,7 +132,8 @@ namespace Pathfinder.OctreeAStar
         public double MinDPRRootSize = DEFAULT_MIN_DPR_ROOT_SIZE;
         public float PathRenderThickness = DEFAULT_PATH_RENDER_THICKNESS;
         public bool ShowPathfinderMessages = true;
-
+        public double DPRMinAltitude = DEFAULT_DPR_MIN_ALTITUDE;
+        public double DPRStepSize = DEFAULT_DPR_STEP_SIZE;
         private OctreeAStarSettings()
         {
             InitializeDefaults();
@@ -173,6 +177,8 @@ namespace Pathfinder.OctreeAStar
             MinDPRRootSize = DEFAULT_MIN_DPR_ROOT_SIZE;
             PathRenderThickness = DEFAULT_PATH_RENDER_THICKNESS;
             ShowPathfinderMessages = true;
+            DPRMinAltitude = DEFAULT_DPR_MIN_ALTITUDE;
+            DPRStepSize = DEFAULT_DPR_STEP_SIZE;
         }
 
 
@@ -399,6 +405,9 @@ namespace Pathfinder.OctreeAStar
                     PathRenderThickness = settingsData.PathRenderThickness;
                 }
 
+                DPRMinAltitude = settingsData.DPRMinAltitude;
+                DPRStepSize = settingsData.DPRStepSize;
+
                 if (wroteDefaults)
                 {
                     // Persist newly introduced defaults back to storage so future loads have them
@@ -441,6 +450,8 @@ namespace Pathfinder.OctreeAStar
                     PathRenderThickness = PathRenderThickness,
                     RenderDynamicObstacles = RenderDynamicObstacles,
                     ShowPathfinderMessages = ShowPathfinderMessages,
+                    DPRMinAltitude = DPRMinAltitude,
+                    DPRStepSize = DPRStepSize,
                 };
 
                 string xmlContent = MyAPIGateway.Utilities.SerializeToXML(settingsData);

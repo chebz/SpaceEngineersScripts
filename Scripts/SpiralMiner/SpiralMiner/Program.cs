@@ -150,11 +150,11 @@ namespace IngameScript
             private readonly IMyRemoteControl _remoteControl;
             private List<IMyShipDrill> _drills = new List<IMyShipDrill>();
             private List<IMyCargoContainer> _cargoBlocks = new List<IMyCargoContainer>();
-            private List<IMyBatteryBlock> _batteryBlocks = new List<IMyBatteryBlock>();
             private IMySensorBlock _forwardSensor;
             private readonly List<IMyTextSurface> _statusSurfaces = new List<IMyTextSurface>();
             private IMyProgrammableBlock _pathfinderProgrammableBlock;
             private IMyProgrammableBlock _autodockProgrammableBlock;
+            private List<IMyBatteryBlock> _batteryBlocks = new List<IMyBatteryBlock>();
 
             private readonly SpiralMinerSection _section;
             private bool _firstExecution = true;
@@ -180,9 +180,9 @@ namespace IngameScript
                 if (_remoteControl != null)
                 {
                     _drills = _program.GetLocalBlocks<IMyShipDrill>();
+                    _batteryBlocks = _program.GetLocalBlocks<IMyBatteryBlock>();
                 }
 
-                _batteryBlocks = _program.GetLocalBlocks<IMyBatteryBlock>();
                 var forwardSensors = _program.GetLocalBlocksNameContains<IMySensorBlock>("[SM]");
                 if (forwardSensors.Count > 0)
                 {
@@ -436,11 +436,6 @@ namespace IngameScript
 
             private double GetBatteryChargeRatio()
             {
-                if (_batteryBlocks.Count == 0)
-                {
-                    _batteryBlocks = _program.GetLocalBlocks<IMyBatteryBlock>();
-                }
-
                 double stored = 0;
                 double maxStored = 0;
 
@@ -467,23 +462,6 @@ namespace IngameScript
                 }
             }
 
-            private void SetBatteryRechargeMode(bool recharge)
-            {
-                if (_batteryBlocks.Count == 0)
-                {
-                    _batteryBlocks = _program.GetLocalBlocks<IMyBatteryBlock>();
-                }
-
-                foreach (var battery in _batteryBlocks)
-                {
-                    if (battery == null)
-                    {
-                        continue;
-                    }
-
-                    battery.ChargeMode = recharge ? ChargeMode.Recharge : ChargeMode.Auto;
-                }
-            }
 
             private void UpdateStatus(string state, params string[] details)
             {
@@ -559,7 +537,7 @@ namespace IngameScript
                 return true;
             }
 
-            private bool SendAutoDockCommand(string command, string connectorArg, bool includeCallback)
+            private bool SendAutoDockCommand(string command, string stationArg, string connectorArg, bool includeCallback)
             {
                 if (_autodockProgrammableBlock == null)
                 {
@@ -567,11 +545,22 @@ namespace IngameScript
                     return false;
                 }
 
-                var builder = new StringBuilder(command);
-                if (!string.IsNullOrEmpty(connectorArg))
+                var arguments = new List<string>();
+                if (string.Equals(command, "dock", StringComparison.OrdinalIgnoreCase))
                 {
-                    builder.Append(' ');
-                    builder.Append(connectorArg);
+                    arguments.Add(string.IsNullOrWhiteSpace(stationArg) ? "*" : stationArg);
+                    arguments.Add(string.IsNullOrWhiteSpace(connectorArg) ? "*" : connectorArg);
+                }
+                else
+                {
+                    if (!string.IsNullOrWhiteSpace(stationArg))
+                    {
+                        arguments.Add(stationArg);
+                    }
+                    if (!string.IsNullOrWhiteSpace(connectorArg))
+                    {
+                        arguments.Add(connectorArg);
+                    }
                 }
 
                 if (includeCallback)
@@ -579,12 +568,14 @@ namespace IngameScript
                     var callbackName = _program.Me.CustomName;
                     if (!string.IsNullOrEmpty(callbackName))
                     {
-                        builder.Append(' ');
-                        builder.Append(callbackName);
+                        arguments.Add(callbackName);
                     }
                 }
 
-                var commandString = builder.ToString();
+                var commandString = arguments.Count > 0
+                    ? $"{command} {string.Join(" ", arguments)}"
+                    : command;
+
                 if (!_autodockProgrammableBlock.TryRun(commandString))
                 {
                     _program.Echo($"SpiralMiner: Failed to run AutoDock command '{commandString}'");
@@ -596,12 +587,17 @@ namespace IngameScript
 
             private bool RequestDock()
             {
-                return SendAutoDockCommand("dock", _section.DockingConnectorName.Value, true);
+                var stationName = _section.DockingStationName.Value;
+                if (string.IsNullOrWhiteSpace(stationName))
+                {
+                    stationName = "*";
+                }
+                return SendAutoDockCommand("dock", stationName, _section.DockingConnectorName.Value, true);
             }
 
             private bool RequestUndock()
             {
-                return SendAutoDockCommand("undock", null, true);
+                return SendAutoDockCommand("undock", null, null, true);
             }
 
             private double GetCargoFillRatio()
@@ -701,7 +697,6 @@ namespace IngameScript
 
                 public override void Enter()
                 {
-                    _context.SetBatteryRechargeMode(false);
                     _context.SetDrills(false, false);
                     _context._navigation.Stop();
                     _context._alignment.Stop();
@@ -1217,11 +1212,6 @@ namespace IngameScript
                 {
                     _context.SetDrills(false, false);
                     _context.UpdateStatus("WaitForCargoEmpty");
-
-                    if (_context._isDocked)
-                    {
-                        _context.SetBatteryRechargeMode(true);
-                    }
                 }
 
                 public override void Execute()
@@ -1273,6 +1263,7 @@ namespace IngameScript
                 private const double MINING_STEP_DEFAULT = 1;
                 private const double CARGO_FULL_THRESHOLD_DEFAULT = 0.95;
                 private const double CARGO_EMPTY_THRESHOLD_DEFAULT = 0.05;
+                private const string DOCKING_STATION_NAME_DEFAULT = "*";
                 private const string DOCKING_CONNECTOR_NAME_DEFAULT = "*";
                 private const double BATTERY_UNDOCK_THRESHOLD_DEFAULT = 0.95;
                 private const double BATTERY_RETURN_THRESHOLD_DEFAULT = 0.30;
@@ -1291,6 +1282,7 @@ namespace IngameScript
                 public DoubleProperty MiningStep { get; } = new DoubleProperty("MiningStep", MINING_STEP_DEFAULT);
                 public DoubleProperty CargoFullThreshold { get; } = new DoubleProperty("CargoFullThreshold", CARGO_FULL_THRESHOLD_DEFAULT);
                 public DoubleProperty CargoEmptyThreshold { get; } = new DoubleProperty("CargoEmptyThreshold", CARGO_EMPTY_THRESHOLD_DEFAULT);
+                public StringProperty DockingStationName { get; } = new StringProperty("DockingStationName", DOCKING_STATION_NAME_DEFAULT);
                 public StringProperty DockingConnectorName { get; } = new StringProperty("DockingConnectorName", DOCKING_CONNECTOR_NAME_DEFAULT);
                 public DoubleProperty BatteryUndockThreshold { get; } = new DoubleProperty("BatteryUndockThreshold", BATTERY_UNDOCK_THRESHOLD_DEFAULT);
                 public DoubleProperty BatteryReturnThreshold { get; } = new DoubleProperty("BatteryReturnThreshold", BATTERY_RETURN_THRESHOLD_DEFAULT);
@@ -1315,6 +1307,7 @@ namespace IngameScript
                     _properties.Add(MiningStep);
                     _properties.Add(CargoFullThreshold);
                     _properties.Add(CargoEmptyThreshold);
+                    _properties.Add(DockingStationName);
                     _properties.Add(DockingConnectorName);
                     _properties.Add(BatteryUndockThreshold);
                     _properties.Add(BatteryReturnThreshold);

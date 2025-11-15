@@ -84,11 +84,17 @@ namespace IngameScript
 
         private void CallDrones()
         {
-            var stationPbId = Me.EntityId;
-            var stationGridId = Me.CubeGrid.EntityId;
-            var message = $"orderdock|{stationPbId}|{stationGridId}";
+            var stationName = string.IsNullOrWhiteSpace(Me.CubeGrid.CustomName)
+                ? Me.CustomName
+                : Me.CubeGrid.CustomName;
+            if (string.IsNullOrWhiteSpace(stationName))
+            {
+                stationName = "Station";
+            }
+
+            var message = $"orderdock|{stationName}|*";
             IGC.SendBroadcastMessage("AutoDock", message);
-            Echo($"Broadcasting dock order to all drones (Station Grid ID: {stationGridId})");
+            Echo($"Broadcasting dock order to drones for station '{stationName}'");
         }
 
         private void ShowStatus()

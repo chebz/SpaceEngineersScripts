@@ -1,66 +1,33 @@
-[h1]Pathfinder – Bi-directional Octree A* for Space Engineers[/h1]
+[h1]Pathfinder – Bi-directional Octree A*[/h1]
+[quote]Alpha build – behaviour may change, use at your own risk.[/quote]
 
-[h2]Overview[/h2]
-Pathfinder is an alpha-stage navigation mod that embeds a bi-directional octree A* solver directly into Space Engineers. It is designed to be driven by in-game scripts, delivering high-quality 3D paths that respect voxel terrain, grids, and user-defined altitude constraints.
-
-[quote]
-⚠️ [b]Alpha warning:[/b] the mod is still in early development. APIs, behaviours, and performance characteristics may change without notice. Expect rough edges and use at your own risk.
-[/quote]
-
-[h2]Setup Requirements[/h2]
-[list]
-[*] Remote control block mounted so its forward axis matches the craft’s forward direction (Pathfinder assumes the remote’s forward vector is the desired heading).
-[*] Thrust coverage in all six directions.
-[*] At least one gyro for rotational control.
-[/list]
+[h2]Quick Requirements[/h2]
+Remote control facing forward, six-direction thrust, at least one gyro.
 
 [h2]Terminal Properties[/h2]
-Access the hidden properties via [b]IMyTerminalProperty<>[/b] from programmable blocks:
 [list]
-[*] [b]PathfinderDestination[/b] ([b]Vector3D?[/b]): Set a world-space target. [i]null[/i] clears the destination.
-[*] [b]PathfinderPath[/b] ([b]string[/b], read-only): Serialized master path ([i](X,Y,Z)[/i] segments).
-[*] [b]DPRPath[/b] ([b]string[/b], read-only): Serialized dynamic-refinement path (present when Dynamic Path Refinement is active).
-[*] [b]PathfinderStatus[/b] ([b]string[/b], read-only): Solver state ([i]NotStarted[/i], [i]Calculating[/i], [i]Ready[/i], [i]NoPath[/i]).
-[*] [b]CurrentWaypointIndex[/b] ([b]int[/b]): Current master waypoint index; scripts update this to inform Pathfinder which segment is active.
-[*] [b]MinAltitude[/b] / [b]MaxAltitude[/b] ([b]double[/b]): Optional altitude clamps (metres above sea level, only effective inside a planet gravity well).
+[*] [b]PathfinderDestination[/b] (Vector3D?) – set/clear target (null clears).
+[*] [b]PathfinderPath[/b] / [b]DPRPath[/b] (string) – serialized master / refined paths.
+[*] [b]PathfinderStatus[/b] – NotStarted / Calculating / Ready / NoPath.
+[*] [b]CurrentWaypointIndex[/b] – current master waypoint.
+[*] [b]MinAltitude[/b] / [b]MaxAltitude[/b] – optional planet altitude clamps.
 [/list]
 
 [h2]Terminal Actions[/h2]
 [list]
-[*] [b]RecomputePath[/b] – Force a full recompute using the current destination.
-[*] [b]ClearPath[/b] – Cancel the current path and reset the solver.
+[*] [b]RecomputePath[/b] – rebuild with existing destination.
+[*] [b]ClearPath[/b] – abort and reset.
 [/list]
-Visible buttons labelled “Recompute Path” and “Clear Path” on the remote control trigger the same actions.
 
-[h2]Dynamic Path Refinement (DPR)[/h2]
-When enabled (default), Pathfinder continuously refines the master path to avoid moving obstacles and cut corners safely. The refined path is emitted through [b]DPRPath[/b]. Disable DPR in [b]OctreeAStarSettings[/b] if you prefer the raw master path.
-
-[h2]Script Integration[/h2]
-For a working example, study the [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3604823270]PathfinderPatrol[/url] in-game script. It demonstrates how to:
+[h2]Scripts & Links[/h2]
 [list]
-[*] write GPS destinations into [b]PathfinderDestination[/b]
-[*] monitor [b]PathfinderStatus[/b] and adjust behaviour
-[*] use [b]CurrentWaypointIndex[/b] to stay in sync with the dynamic refinement
-[*] respond to success/failure callbacks via terminal actions
+[*] Control script: [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3605172814]PathfinderNavigation[/url]
+[*] Source code: [url=https://github.com/chebz/SpaceEngineersScripts/tree/PathNav/Mods/Pathfinder]GitHub – Pathfinder[/url]
 [/list]
+
+[h2]Notes[/h2]
 [list]
-[*] Source code (mod): [url=https://github.com/chebz/SpaceEngineersScripts/tree/PathNav/Mods/Pathfinder]GitHub - Pathfinder[/url]
-[*] Source code (demo script): [url=https://github.com/chebz/SpaceEngineersScripts/tree/PathNav/Scripts/PathfinderPatrol]GitHub - PathfinderPatrol[/url]
+[*] Settings: [b]%AppData%\SpaceEngineers\Storage\[3597348725.sbm_]Pathfinder\PathfinderSettings.xml[/b].
+[*] Diagnostics log: [b]%AppData%\SpaceEngineers\Pathfinder.log[/b].
 [/list]
-
-[h2]Testing & Usage Tips[/h2]
-[list=1]
-[*] Ensure the remote control is powered, owned by you, and has control over the grid’s thrusters/gyros.
-[*] Set [b]PathfinderDestination[/b] from a programmable block, e.g.:
-[code]
-var destProp = remote.GetProperty("PathfinderDestination") as ITerminalProperty<Vector3D?>;
-destProp?.SetValue(remote, new Vector3D(0, 0, 0));
-[/code]
-[*] Poll [b]PathfinderStatus[/b] each tick; when it returns [i]Ready[/i], parse [b]PathfinderPath[/b] or [b]DPRPath[/b] and feed the waypoints to your navigation logic.
-[*] Call [b]RecomputePath[/b] whenever you change destination or detect significant drift.
-[*] For global defaults, edit [b]PathfinderSettings.xml[/b] in the world storage folder ([b]Storage/Pathfinder/PathfinderSettings.xml[/b]) after Pathfinder has run once. The file controls [b]OctreeAStarSettings[/b] such as octant debug drawing, node budgets, DPR parameters, and the [b]ShowPathfinderMessages[/b] toggle (set it to [i]false[/i] to silence HUD notifications).
-[/list]
-
-[h2]Feedback[/h2]
-Pathfinder’s internals are evolving quickly. If you hit serious issues, grab [b]Pathfinder.log[/b] from [b]Storage/Pathfinder/Pathfinder.log[/b] in your world save and share it—diagnostics help stabilise the project. Until then, keep backups of your craft, expect breakage, and fly safe. The Dude abides.
 

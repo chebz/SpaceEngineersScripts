@@ -25,7 +25,6 @@ namespace IngameScript
         private CustomDataConnector _customDataConnector;
         private Navigation _navigation;
         private Alignment _alignment;
-        private PathfindingNavigation _pathfinderNavigation;
         private AutoDockDrone _autoDockDrone;
         private IMyProgrammableBlock _callbackProgrammableBlock;
 
@@ -38,7 +37,6 @@ namespace IngameScript
 
             _navigation = new Navigation();
             _alignment = new Alignment();
-            _pathfinderNavigation = new PathfindingNavigation();
             _autoDockDrone = new AutoDockDrone();
 
             string errorMessage;
@@ -52,12 +50,7 @@ namespace IngameScript
                 Echo($"Alignment Error: {errorMessage}");
             }
 
-            if (!_pathfinderNavigation.Initialize(this, _customDataConnector, _navigation, _alignment, out errorMessage))
-            {
-                Echo($"PathfinderNavigation Error: {errorMessage}");
-            }
-
-            if (!_autoDockDrone.Initialize(this, _customDataConnector, _navigation, _alignment, _pathfinderNavigation, out errorMessage))
+            if (!_autoDockDrone.Initialize(this, _customDataConnector, _navigation, _alignment, out errorMessage))
             {
                 Echo($"AutoDockDrone Error: {errorMessage}");
             }
@@ -99,26 +92,19 @@ namespace IngameScript
                     if (data.StartsWith("orderdock|"))
                     {
                         var parts = data.Split('|');
-                        if (parts.Length >= 3)
+                        if (parts.Length >= 2)
                         {
-                            long stationPbId, stationGridId;
-                            if (long.TryParse(parts[1], out stationPbId) && long.TryParse(parts[2], out stationGridId))
+                            var stationName = parts[1];
+                            var connectorName = parts.Length >= 3 ? parts[2] : "*";
+
+                            _autoDockDrone.DockToStation(stationName, connectorName);
+                            if (connectorName == "*")
                             {
-                                var connectorName = parts.Length >= 4 ? parts[3] : "*";
-                                _autoDockDrone.DockToStation(stationPbId, connectorName);
-                                if (connectorName == "*")
-                                {
-                                    Echo($"Received dock order to station {stationGridId}");
-                                }
-                                else
-                                {
-                                    Echo($"Received dock order to station {stationGridId} ({connectorName})");
-                                }
+                                Echo($"Received dock order for station '{stationName}'");
                             }
                             else
                             {
-                                Echo($"Failed to parse station IDs: PB='{parts[1]}' Grid='{parts[2]}'");
-                                Echo($"Message was: '{data}'");
+                                Echo($"Received dock order for station '{stationName}' ({connectorName})");
                             }
                         }
                     }
@@ -141,41 +127,47 @@ namespace IngameScript
             switch (command)
             {
                 case "dock":
+                    var stationName = "*";
                     var connectorName = "*";
                     var callbackName = string.Empty;
 
                     if (!string.IsNullOrEmpty(commandArgs))
                     {
-                        var separatorIndex = commandArgs.IndexOf(' ');
-                        if (separatorIndex == -1)
+                        var tokens = commandArgs.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                        if (tokens.Length >= 1)
                         {
-                            connectorName = commandArgs;
+                            stationName = tokens[0];
                         }
-                        else
+                        if (tokens.Length >= 2)
                         {
-                            connectorName = commandArgs.Substring(0, separatorIndex).Trim();
-                            callbackName = commandArgs.Substring(separatorIndex + 1).Trim();
+                            connectorName = tokens[1];
                         }
-
-                        if (string.IsNullOrEmpty(connectorName))
+                        if (tokens.Length >= 3)
                         {
-                            connectorName = "*";
+                            callbackName = tokens[2];
                         }
                     }
+
+                    stationName = string.IsNullOrWhiteSpace(stationName) ? "*" : stationName;
+                    connectorName = string.IsNullOrWhiteSpace(connectorName) ? "*" : connectorName;
 
                     if (!string.IsNullOrEmpty(callbackName))
                     {
                         LinkCallbackProgrammableBlock(callbackName);
                     }
 
-                    _autoDockDrone.DockToNearest(connectorName);
-                    if (connectorName == "*")
+                    _autoDockDrone.DockToStation(stationName, connectorName);
+                    if (stationName == "*" && connectorName == "*")
                     {
                         Echo("Requesting docking to nearest station...");
                     }
+                    else if (connectorName == "*")
+                    {
+                        Echo($"Requesting docking to station '{stationName}'");
+                    }
                     else
                     {
-                        Echo($"Requesting docking to nearest station ({connectorName})...");
+                        Echo($"Requesting docking to station '{stationName}' ({connectorName})");
                     }
                     break;
 
@@ -185,7 +177,6 @@ namespace IngameScript
                         LinkCallbackProgrammableBlock(commandArgs);
                     }
                     _autoDockDrone.Undock();
-                    Echo("Undocking...");
                     break;
 
                 case "toggledock":
@@ -211,7 +202,7 @@ namespace IngameScript
             }
             else if (_autoDockDrone.IsUndocked())
             {
-                _autoDockDrone.DockToNearest("*");
+                _autoDockDrone.DockToStation("*", "*");
                 Echo("Requesting docking to nearest station...");
             }
             else

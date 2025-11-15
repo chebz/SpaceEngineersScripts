@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
 using Sandbox.Game.Entities;
+using Sandbox.Game.WorldEnvironment;
 using Sandbox.ModAPI;
 using VRage.Game.Entity;
 using VRage.Game.ModAPI;
 using VRage.ModAPI;
+using VRage.Render.Scene;
 using VRageMath;
 
 namespace Pathfinder.OctreeAStar
@@ -15,6 +17,7 @@ namespace Pathfinder.OctreeAStar
         private readonly List<MyOrientedBoundingBoxD> _velocityObstacles = new List<MyOrientedBoundingBoxD>();
         private readonly HashSet<IMyEntity> _entityCache = new HashSet<IMyEntity>();
         private readonly List<MyEntity> _staticQueryResults = new List<MyEntity>();
+        private readonly List<MyLineSegmentOverlapResult<MyEntity>> _raycastResults = new List<MyLineSegmentOverlapResult<MyEntity>>();
         private Path _refinedPath;
         private string _refinedPathString = string.Empty;
         MyOrientedBoundingBoxD _pathObb;
@@ -187,12 +190,23 @@ namespace Pathfinder.OctreeAStar
             BuildDynamicObstacles(navigation, travelTime);
 
             // Optimization: Check if path is clear before full computation
-            if (IsPathClear(currentPosition, targetPoint, navigation))
+            var pathClearTarget = targetPoint;
+            var didUpdateWaypointIndex = updatedWaypointIndex != navigation.CurrentWaypointIndex;
+            if (!didUpdateWaypointIndex)
             {
+                var distToNext = Vector3D.Distance(targetPoint, points[updatedWaypointIndex]);
+                if (distToNext > distanceToTarget)
+                {
+                    pathClearTarget = points[updatedWaypointIndex];
+                }
+            }
+            if (IsPathClear(currentPosition, pathClearTarget, navigation))
+            {
+                
                 // Create simple 2-point path
                 _refinedPath = new Path
                 {
-                    points = new List<Vector3D> { currentPosition, targetPoint },
+                    points = new List<Vector3D> { currentPosition, pathClearTarget },
                     state = Path.State.Ready
                 };
                 _refinedPathString = _refinedPath.ToString();
@@ -283,9 +297,30 @@ namespace Pathfinder.OctreeAStar
 
             var direction = end - start;
             var length = direction.Length();
+            var directionNormalized = length > 1e-6 ? direction / length : Vector3D.Zero;
 
             var halfExtents = new Vector3D(agentSize * 0.5, agentSize * 0.5, agentSize * 0.5);
-            
+            if (navigation.RemoteControl.GetNaturalGravity().LengthSquared() > 1e-6)
+            {
+                var planet = MyGamePruningStructure.GetClosestPlanet(start);
+                if (planet != null)
+                {
+                    var downRayLength = OctreeAStarSettings.Instance.DPRMinAltitude;
+                    var step = OctreeAStarSettings.Instance.DPRStepSize;
+                    var stepCount = length > 1e-6 ? Math.Max(1, (int)Math.Ceiling(length / step)) : 1;
+                    for (int i = 0; i <= stepCount; i++)
+                    {
+                        var distanceAlong = Math.Min(length, i * step);
+                        var pointOnPath = start + directionNormalized * distanceAlong;
+                        var dirToPlanet = (planet.WorldMatrix.Translation - pointOnPath).Normalized();
+                        var samplePoint = pointOnPath + dirToPlanet * downRayLength;
+                        if (planet.IsUnderGround(samplePoint))
+                        {
+                            return false;
+                        }
+                    }
+                }
+            }
             if (length < 1e-6)
             {
                 _pathObb = new MyOrientedBoundingBoxD(start, halfExtents, Quaternion.Identity);
@@ -313,10 +348,26 @@ namespace Pathfinder.OctreeAStar
             // Check static environment
             _staticQueryResults.Clear();
             MyGamePruningStructure.GetAllEntitiesInOBB(ref _pathObb, _staticQueryResults, MyEntityQueryType.Static);
+            var pathBounds = new BoundingBoxD(-_pathObb.HalfExtent, _pathObb.HalfExtent);
+            var obbMatrix = MatrixD.CreateFromQuaternion(_pathObb.Orientation);
+            obbMatrix.Translation = _pathObb.Center;
 
             for (int i = 0; i < _staticQueryResults.Count; i++)
             {
-                var grid = _staticQueryResults[i] as IMyCubeGrid;
+                var entity = _staticQueryResults[i];
+                // var voxel = entity as MyVoxelBase;
+                // if (voxel != null)
+                // {
+                //     var voxelContent = voxel.GetVoxelContentInBoundingBox_Fast(pathBounds, obbMatrix, true);
+                //     if (voxelContent.Item2 >= 0.1)
+                //     {
+                //         Utils.ShowHudMessage(voxel.DisplayName ?? voxel.Name);
+                //         return false;
+                //     }
+                //     continue;
+                // }
+
+                var grid = entity as IMyCubeGrid;
                 if (grid == null)
                 {
                     continue;

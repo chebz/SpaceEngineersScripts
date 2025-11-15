@@ -18,7 +18,7 @@ namespace Pathfinder
     public static class Utils
     {
         #region Logging
-        private const string LOG_FILE_NAME = "Pathfinder.log";
+        private const string LOG_FILE_NAME = "Pathfinder";
         private const string APP_VERSION = "1.0.0";
 
         private static MyLog _log;
@@ -31,7 +31,8 @@ namespace Pathfinder
             }
 
             var log = new MyLog();
-            log.Init(LOG_FILE_NAME, new StringBuilder(APP_VERSION));
+            var logName = $"{LOG_FILE_NAME}_{DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss")}.log";
+            log.Init(logName, new StringBuilder(APP_VERSION));
             _log = log;
         }
 
@@ -45,7 +46,7 @@ namespace Pathfinder
             _log.Close();
             _log = null;
         }
-
+ 
         public static void Log(MyLogSeverity severity, string format, params object[] args)
         {
             if (_log == null)

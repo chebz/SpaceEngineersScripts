@@ -114,9 +114,8 @@ namespace IngameScript
             _thrusters[ThrusterDir.Right].Clear();
 
             // Get all thrusters on the grid
-            var allThrusters = new List<IMyThrust>();
-            _program.GridTerminalSystem.GetBlocksOfType<IMyThrust>(allThrusters);
-
+            var allThrusters = _program.GetLocalBlocks<IMyThrust>();
+            
             // Get remote control's orientation vectors
             var remoteMatrix = _remoteControl.WorldMatrix;
             var forward = remoteMatrix.Forward;
@@ -391,21 +390,27 @@ namespace IngameScript
         {
             // Find the thruster directionwith the minimum effective thrust
             var minThrust = double.MaxValue;
+            var minThrustDir = ThrusterDir.Forward;
+            var thrusterNames = new List<string>();
             foreach (var dir in _thrusters.Keys)
             {
                 var thrust = _thrusters[dir].Sum(t => t.MaxEffectiveThrust);
                 if (thrust < minThrust)
                 {
                     minThrust = thrust;
+                    minThrustDir = dir;
+                    thrusterNames.Clear();
+                    thrusterNames.AddRange(_thrusters[dir].Select(t => t.CustomName));
                 }
             }
-            var mass = _remoteControl.CalculateShipMass().TotalMass;
+            var mass = (double)_remoteControl.CalculateShipMass().TotalMass;
             var gravMagnitude = _remoteControl.GetNaturalGravity().Length();
             if (gravMagnitude == 0)
             {
                 gravMagnitude = 1;
             }
-            return minThrust / mass / 10;
+            _program.Echo($"Grav Magnitude: {gravMagnitude}, mass: {mass}, thrusterNames: {string.Join(", ", thrusterNames)}");
+            return minThrust / mass / 10.0;
         }
 
         private double CalculateDesiredSpeedAtPosition(Vector3D target, double maxSpeed)
@@ -416,7 +421,7 @@ namespace IngameScript
             // Correct breaking distance formula: v²/(2a)
             // This gives us the distance needed to stop from maxSpeed
             var maxAcceleration = CalculateMaximumAcceleration();
-            _program.Echo($"Max Acceleration: {maxAcceleration}");
+            _program.Echo($"Max Acceleration: {maxAcceleration}, distance: {distance}");
             var breakingDistance = (maxSpeed * maxSpeed) / (2.0 * maxAcceleration);
             
             if (distance > breakingDistance)

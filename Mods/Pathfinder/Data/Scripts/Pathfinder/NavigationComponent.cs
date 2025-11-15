@@ -16,6 +16,7 @@ using Sandbox.ModAPI.Ingame;
 using VRage.Game.ModAPI;
 using Pathfinder.OctreeAStar;
 using Sandbox.Game.Entities.Blocks;
+using Sandbox.Game.Entities;
 
 namespace Pathfinder
 {
@@ -42,6 +43,9 @@ namespace Pathfinder
         private double _maxAltitude = DEFAULT_MAX_ALTITUDE;
         private readonly DynamicPathRefinement _dynamicPathRefinement = new DynamicPathRefinement();
         private int _currentWaypointIndex = -1;
+        private Vector3D _testRaycastStart;
+        private Vector3D _testRaycastEnd;
+        private MyOrientedBoundingBoxD _testOOB;
 
         public bool NeedsRecompute
         {
@@ -155,6 +159,12 @@ namespace Pathfinder
             FindPath();
             _graph.Render();
             _dynamicPathRefinement.Update(this);
+            // if (_remoteControl.CubeGrid.CustomName == "Medium Miner")
+            // {
+            //     _testRaycastStart = _remoteControl.CubeGrid.WorldAABB.Center;
+            //     _testRaycastEnd = _testRaycastStart + _remoteControl.WorldMatrix.GetOrientation().Forward * 200;
+            //     Utils.DrawOBB(_testOOB, Color.Green, true);
+            // }
         }
 
         public override void UpdateBeforeSimulation100()
@@ -162,6 +172,8 @@ namespace Pathfinder
             OctreeAStarSettings.Instance.Update();
 
             _dynamicPathRefinement.RefinePath(this);
+            //TestRaycast();
+            // TestOOBCast();
         }
 
         private void FindPath()
@@ -369,5 +381,49 @@ namespace Pathfinder
         {
             return _dynamicPathRefinement.RefinedPathString;
         }
+
+        // private void TestRaycast()
+        // {
+        //     if (_remoteControl.CubeGrid.CustomName != "Medium Miner")
+        //     {
+        //         return;
+        //     }
+        //     var hits = new List<IHitInfo>();
+        //     MyAPIGateway.Physics.CastRay(_testRaycastStart, _testRaycastEnd, hits, OctreeAStarSettings.Instance.TestCollisionLayer);
+        //     foreach (var hit in hits)
+        //     {
+        //         Utils.ShowHudMessage(OctreeAStarSettings.Instance.TestCollisionLayer + ": " + hit.HitEntity.Name + " " + hit.HitEntity.DisplayName + " " + hit.HitEntity.GetFriendlyName() + " " + hit.HitEntity.GetType().Name);
+        //     }
+        // }
+
+        // private void TestOOBCast()
+        // {
+        //     if (_remoteControl.CubeGrid.CustomName != "Medium Miner")
+        //     {
+        //         return;
+        //     }
+        //     var center = _testRaycastStart + (_testRaycastEnd - _testRaycastStart) * 0.5;
+        //     var halfExtents = _remoteControl.CubeGrid.WorldAABB.Size * 0.5;
+        //     var dist = Vector3D.Distance(_testRaycastStart, _testRaycastEnd);
+        //     halfExtents.Z = dist * 0.5;
+        //     var bounds = new BoundingBoxD(-halfExtents, halfExtents);
+        //     _testOOB = new MyOrientedBoundingBoxD(bounds, _remoteControl.WorldMatrix);
+        //     var result = new List<VRage.Game.Entity.MyEntity>();
+        //     MyGamePruningStructure.GetAllEntitiesInOBB(ref _testOOB, result, MyEntityQueryType.Both);
+        //     foreach (var entity in result)
+        //     {
+        //         Utils.ShowHudMessage(entity.Name + " " + entity.DisplayName + " " + entity.GetFriendlyName() + " " + entity.GetType().Name);
+
+        //         var voxelMap = entity as MyVoxelBase;
+        //         if (voxelMap != null)
+        //         {
+        //             var vol = voxelMap.GetVoxelContentInBoundingBox_Fast(bounds, _remoteControl.WorldMatrix);
+        //             if (vol.Item2 > 0)
+        //             {
+        //                 Utils.ShowHudMessage("Voxel map found: "+ vol.Item1 + " " + vol.Item2);
+        //             }
+        //         }
+        //     }
+        // }
     }
 }

@@ -161,7 +161,8 @@ namespace IngameScript
                         var parts = data.Split('|');
                         var droneName = parts.Length > 1 ? parts[1] : "Unknown";
                         var connectorKey = parts.Length > 2 ? parts[2] : "*";
-                        HandleDockingRequest(message.Source, droneName, connectorKey, true);
+                        var requestedStation = parts.Length > 3 ? parts[3] : "*";
+                        HandleDockingRequest(message.Source, droneName, requestedStation, connectorKey, true);
                     }
                 }
             }
@@ -177,7 +178,8 @@ namespace IngameScript
                         var parts = data.Split('|');
                         var droneName = parts.Length > 1 ? parts[1] : "Unknown";
                         var connectorKey = parts.Length > 2 ? parts[2] : "*";
-                        HandleDockingRequest(message.Source, droneName, connectorKey, false);
+                        var requestedStation = parts.Length > 3 ? parts[3] : "*";
+                        HandleDockingRequest(message.Source, droneName, requestedStation, connectorKey, false);
                     }
                     else if (data == "requestdockcoord")
                     {
@@ -191,9 +193,21 @@ namespace IngameScript
             }
         }
 
-        private void HandleDockingRequest(long shipId, string droneName, string requestedConnectorKey, bool isBroadcast)
+        private void HandleDockingRequest(long shipId, string droneName, string requestedStationName, string requestedConnectorKey, bool isBroadcast)
         {
             requestedConnectorKey = string.IsNullOrWhiteSpace(requestedConnectorKey) ? "*" : requestedConnectorKey;
+            requestedStationName = string.IsNullOrWhiteSpace(requestedStationName) ? "*" : requestedStationName;
+
+            _program.Echo($"Handling docking request for {droneName} on {requestedConnectorKey} for station {requestedStationName}");
+            if (!MatchesStationName(requestedStationName))
+            {
+                _program.Echo($"Station name {requestedStationName} does not match current station name {_program.Me.CubeGrid.CustomName}");
+                if (requestedStationName != "*" && !isBroadcast)
+                {
+                    _program.IGC.SendUnicastMessage(shipId, BROADCAST_TAG, "nodocksavailable");
+                }
+                return;
+            }
 
             var existingConnector = FindConnectorByShipId(shipId);
             if (existingConnector != null)
@@ -212,7 +226,7 @@ namespace IngameScript
 
             if (requestedConnectorKey != "*" && !_connectorsByKey.ContainsKey(requestedConnectorKey))
             {
-                if (!isBroadcast)
+                if (requestedStationName != "*")
                 {
                     _program.IGC.SendUnicastMessage(shipId, BROADCAST_TAG, "nodocksavailable");
                 }
@@ -245,6 +259,7 @@ namespace IngameScript
 
             if (candidates.Count == 0)
             {
+                _program.Echo($"No docks available for {droneName} on {requestedStationName}");
                 _program.IGC.SendUnicastMessage(shipId, BROADCAST_TAG, "nodocksavailable");
                 return;
             }
@@ -315,6 +330,23 @@ namespace IngameScript
             {
                 _reservationStatusChecks.Remove(shipId);
             }
+        }
+
+        private bool MatchesStationName(string requestedStationName)
+        {
+            if (string.IsNullOrWhiteSpace(requestedStationName) || requestedStationName == "*")
+            {
+                return true;
+            }
+
+            var stationName = _program.Me.CubeGrid.CustomName;
+            if (string.IsNullOrWhiteSpace(stationName))
+            {
+                stationName = _program.Me.CustomName;
+            }
+
+            return !string.IsNullOrWhiteSpace(stationName) &&
+                   string.Equals(stationName, requestedStationName, StringComparison.OrdinalIgnoreCase);
         }
 
         private void SendPositionUpdates()
