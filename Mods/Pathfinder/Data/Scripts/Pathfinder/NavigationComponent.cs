@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
+using System.Linq;
 using Sandbox.ModAPI;
 using Sandbox.ModAPI.Interfaces;
 using VRage.Game.Components;
@@ -25,6 +26,11 @@ namespace Pathfinder
     {
         private const double DEFAULT_MIN_ALTITUDE = 100.0;
         private const double DEFAULT_MAX_ALTITUDE = 0.0;
+        private const double DEFAULT_DESTINATION_TOLERANCE = 50.0;
+        private const double DEFAULT_MIN_DISTANCE_FROM_DESTINATION = 0.0;
+        private const double DEFAULT_MAX_DISTANCE_FROM_DESTINATION = 50.0;
+        private const double DEFAULT_MAX_RDP_DISTANCE_FROM_DESTINATION = 50.0;
+        private const bool DEFAULT_ENABLE_DYNAMIC_PATH_REFINEMENT = true;
 
         private bool _initialized = false;
         private Sandbox.ModAPI.IMyRemoteControl _remoteControl;
@@ -35,7 +41,20 @@ namespace Pathfinder
         private static readonly Guid PATHFINDER_GOAL_STORAGE_ID = new Guid("7ff8e4a6-69ca-48d3-917e-8d8d4c3a4d9a");
         private static readonly Guid MIN_ALTITUDE_STORAGE_ID = new Guid("79df6c4d-962b-438f-b7b3-eca6c479d67d");
         private static readonly Guid MAX_ALTITUDE_STORAGE_ID = new Guid("3a75e1a9-bdc9-4a07-b5f1-9b9b6c1b0ed8");
+        private static readonly Guid DESTINATION_NAME_STORAGE_ID = new Guid("4d9c3b27-4120-4b7a-86d9-6fb5c9cf9bf3");
+        private static readonly Guid DESTINATION_TOLERANCE_STORAGE_ID = new Guid("f4e8f9c5-0e96-49aa-8f5d-4db4c0d0f8d4");
+        private static readonly Guid MIN_DISTANCE_FROM_DESTINATION_STORAGE_ID = new Guid("1f1397f9-910a-4a4a-95da-63d74f7a3fd2");
+        private static readonly Guid MAX_DISTANCE_FROM_DESTINATION_STORAGE_ID = new Guid("31cbad8e-6adb-4471-9f4a-67583515a69c");
+        private static readonly Guid MAX_RDP_DISTANCE_FROM_DESTINATION_STORAGE_ID = new Guid("a2b3c4d5-e6f7-8901-2345-6789abcdef01");
+        private static readonly Guid ENABLE_DYNAMIC_PATH_REFINEMENT_STORAGE_ID = new Guid("b3c4d5e6-f7a8-9012-3456-789abcdef012");
         private Vector3D? _destination = null;
+        private string _destinationName = string.Empty;
+        private Vector3D? _destinationNamePosition;
+        private double _destinationTolerance = DEFAULT_DESTINATION_TOLERANCE;
+        private double _minDistanceFromDestination = DEFAULT_MIN_DISTANCE_FROM_DESTINATION;
+        private double _maxDistanceFromDestination = DEFAULT_MAX_DISTANCE_FROM_DESTINATION;
+        private double _maxRdpDistanceFromDestination = DEFAULT_MAX_RDP_DISTANCE_FROM_DESTINATION;
+        private bool _enableDynamicPathRefinement = DEFAULT_ENABLE_DYNAMIC_PATH_REFINEMENT;
         private bool _suppressSave;
         private Vector3D? _lastStartPosition;
         private const double POSITION_EPSILON = 0.1;
@@ -56,24 +75,44 @@ namespace Pathfinder
         public Vector3D? Destination
         {
             get { return _destination; }
-            set 
-            { 
-                var newDestination = value;
-                bool destinationChanged = !AreClose(_destination, newDestination, POSITION_EPSILON);
+            set { SetDestinationInternal(value, _destinationTolerance, true); }
+        }
 
-                _destination = newDestination;
+        public string DestinationName => _destinationName;
 
-                bool droneMoved = HasDroneMoved(POSITION_EPSILON);
+        public double DestinationTolerance
+        {
+            get { return _destinationTolerance; }
+            set { SetDestinationTolerance(value, false); }
+        }
 
-                if (destinationChanged || droneMoved)
-                {
-                    _needsRecompute = true;
-                    if (destinationChanged)
-                    {
-                        Save();
-                    }
-                }
-            }
+        public double MinDistanceFromDestination
+        {
+            get { return _minDistanceFromDestination; }
+            set { SetMinDistanceFromDestination(value, false); }
+        }
+
+        public double MaxDistanceFromDestination
+        {
+            get { return _maxDistanceFromDestination; }
+            set { SetMaxDistanceFromDestination(value, false); }
+        }
+
+        public double MaxRdpDistanceFromDestination
+        {
+            get { return _maxRdpDistanceFromDestination; }
+            set { SetMaxRdpDistanceFromDestination(value, false); }
+        }
+
+        public bool EnableDynamicPathRefinement
+        {
+            get { return _enableDynamicPathRefinement; }
+            set { SetEnableDynamicPathRefinement(value, false); }
+        }
+
+        public void SetDestinationNameFromTerminal(string name)
+        {
+            SetDestinationName(name, false);
         }
 
         public double MinAltitude
@@ -150,7 +189,7 @@ namespace Pathfinder
                 if (_remoteControl != null)
                 {
                     _graph = new Graph();
-                    
+                    _graph.OnPathStateChanged += OnPathStateChanged;
                     _initialized = true;
                 }
                 return;
@@ -171,9 +210,24 @@ namespace Pathfinder
         {
             OctreeAStarSettings.Instance.Update();
 
+            UpdateDestinationFromName();
+            
             _dynamicPathRefinement.RefinePath(this);
             //TestRaycast();
             // TestOOBCast();
+        }
+
+        private void OnPathStateChanged(Path.State state)
+        {
+            if (state == Path.State.Ready)
+            {
+                _currentWaypointIndex = 1;
+            }
+            else if (state == Path.State.NoPath)
+            {
+                _dynamicPathRefinement.Clear();
+                _currentWaypointIndex = -1;
+            }
         }
 
         private void FindPath()
@@ -191,7 +245,19 @@ namespace Pathfinder
             if (_needsRecompute)
             {
                 _needsRecompute = false;
-                _graph.BeginFindPath(_remoteControl, start, destination, MinAltitude, MaxAltitude);
+                var parameters = new PathfindingParameters
+                {
+                    RemoteControl = _remoteControl,
+                    Start = start,
+                    End = destination,
+                    MinAltitude = MinAltitude,
+                    MaxAltitude = MaxAltitude,
+                    MinDistanceFromDestination = MinDistanceFromDestination,
+                    MaxDistanceFromDestination = MaxDistanceFromDestination,
+                    EnableDynamicPathRefinement = false,
+                    DynamicObstacles = null
+                };
+                _graph.BeginFindPath(parameters);
                 _pathStartTime = DateTime.Now;
                 _lastStartPosition = start;
                 Utils.ShowHudMessage($"Starting pathfinding to GPS '{_destination.Value}'");
@@ -222,6 +288,7 @@ namespace Pathfinder
             }
             _graphReset = true;
             _needsRecompute = false;
+            _dynamicPathRefinement.Clear();
             _graph.Reset();
             _graphReset = true;
         }
@@ -287,6 +354,90 @@ namespace Pathfinder
             {
                 MaxAltitude = DEFAULT_MAX_ALTITUDE;
             }
+            if (storage.TryGetValue(DESTINATION_NAME_STORAGE_ID, out value))
+            {
+                SetDestinationName(value, true);
+            }
+            if (storage.TryGetValue(DESTINATION_TOLERANCE_STORAGE_ID, out value))
+            {
+                double tolerance;
+                if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out tolerance))
+                {
+                    SetDestinationTolerance(tolerance, true);
+                }
+                else
+                {
+                    SetDestinationTolerance(DEFAULT_DESTINATION_TOLERANCE, true);
+                }
+            }
+            else
+            {
+                SetDestinationTolerance(DEFAULT_DESTINATION_TOLERANCE, true);
+            }
+        if (storage.TryGetValue(MIN_DISTANCE_FROM_DESTINATION_STORAGE_ID, out value))
+        {
+            double distance;
+            if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out distance))
+            {
+                SetMinDistanceFromDestination(distance, true);
+            }
+            else
+            {
+                SetMinDistanceFromDestination(DEFAULT_MIN_DISTANCE_FROM_DESTINATION, true);
+            }
+        }
+        else
+        {
+            SetMinDistanceFromDestination(DEFAULT_MIN_DISTANCE_FROM_DESTINATION, true);
+        }
+        if (storage.TryGetValue(MAX_DISTANCE_FROM_DESTINATION_STORAGE_ID, out value))
+        {
+            double distance;
+            if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out distance))
+            {
+                SetMaxDistanceFromDestination(distance, true);
+            }
+            else
+            {
+                SetMaxDistanceFromDestination(DEFAULT_MAX_DISTANCE_FROM_DESTINATION, true);
+            }
+        }
+        else
+        {
+            SetMaxDistanceFromDestination(DEFAULT_MAX_DISTANCE_FROM_DESTINATION, true);
+        }
+        if (storage.TryGetValue(MAX_RDP_DISTANCE_FROM_DESTINATION_STORAGE_ID, out value))
+        {
+            double distance;
+            if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out distance))
+            {
+                SetMaxRdpDistanceFromDestination(distance, true);
+            }
+            else
+            {
+                SetMaxRdpDistanceFromDestination(DEFAULT_MAX_RDP_DISTANCE_FROM_DESTINATION, true);
+            }
+        }
+        else
+        {
+            SetMaxRdpDistanceFromDestination(DEFAULT_MAX_RDP_DISTANCE_FROM_DESTINATION, true);
+        }
+        if (storage.TryGetValue(ENABLE_DYNAMIC_PATH_REFINEMENT_STORAGE_ID, out value))
+        {
+            bool enable;
+            if (bool.TryParse(value, out enable))
+            {
+                SetEnableDynamicPathRefinement(enable, true);
+            }
+            else
+            {
+                SetEnableDynamicPathRefinement(DEFAULT_ENABLE_DYNAMIC_PATH_REFINEMENT, true);
+            }
+        }
+        else
+        {
+            SetEnableDynamicPathRefinement(DEFAULT_ENABLE_DYNAMIC_PATH_REFINEMENT, true);
+        }
             return true;
         }
 
@@ -306,6 +457,12 @@ namespace Pathfinder
             _remoteControl.Storage.SetValue(MIN_ALTITUDE_STORAGE_ID, minAltitudeString);
             var maxAltitudeString = MaxAltitude.ToString(CultureInfo.InvariantCulture);
             _remoteControl.Storage.SetValue(MAX_ALTITUDE_STORAGE_ID, maxAltitudeString);
+            _remoteControl.Storage.SetValue(DESTINATION_NAME_STORAGE_ID, _destinationName ?? string.Empty);
+            _remoteControl.Storage.SetValue(DESTINATION_TOLERANCE_STORAGE_ID, _destinationTolerance.ToString(CultureInfo.InvariantCulture));
+            _remoteControl.Storage.SetValue(MIN_DISTANCE_FROM_DESTINATION_STORAGE_ID, _minDistanceFromDestination.ToString(CultureInfo.InvariantCulture));
+            _remoteControl.Storage.SetValue(MAX_DISTANCE_FROM_DESTINATION_STORAGE_ID, _maxDistanceFromDestination.ToString(CultureInfo.InvariantCulture));
+            _remoteControl.Storage.SetValue(MAX_RDP_DISTANCE_FROM_DESTINATION_STORAGE_ID, _maxRdpDistanceFromDestination.ToString(CultureInfo.InvariantCulture));
+            _remoteControl.Storage.SetValue(ENABLE_DYNAMIC_PATH_REFINEMENT_STORAGE_ID, _enableDynamicPathRefinement.ToString());
         }
 
         private void WithSaveSuppressed(Action action)
@@ -336,6 +493,296 @@ namespace Pathfinder
             var currentPosition = _remoteControl.CubeGrid.WorldAABB.Center;
             var toleranceSquared = tolerance * tolerance;
             return Vector3D.DistanceSquared(currentPosition, _lastStartPosition.Value) > toleranceSquared;
+        }
+
+        private void SetDestinationInternal(Vector3D? newDestination, double tolerance, bool updateNameFromCoordinates)
+        {
+            var destinationChanged = !AreClose(_destination, newDestination, tolerance);
+            _destination = newDestination;
+
+            if (updateNameFromCoordinates)
+            {
+                UpdateDestinationNameFromCoordinates();
+            }
+            else
+            {
+                if (_destination.HasValue)
+                {
+                    _destinationNamePosition = _destination;
+                }
+                else
+                {
+                    _destinationNamePosition = null;
+                }
+            }
+
+            bool droneMoved = HasDroneMoved(POSITION_EPSILON);
+
+            if (destinationChanged || droneMoved)
+            {
+                _needsRecompute = true;
+                if (destinationChanged)
+                {
+                    Save();
+                }
+            }
+        }
+
+        private void SetDestinationForced(Vector3D? value)
+        {
+            SetDestinationInternal(value, _destinationTolerance, false);
+        }
+
+        private void SetDestinationName(string name, bool fromStorage)
+        {
+            var originalDestination = _destination;
+            var newName = string.IsNullOrWhiteSpace(name) ? string.Empty : name.Trim();
+            var changed = !string.Equals(_destinationName, newName, StringComparison.OrdinalIgnoreCase);
+            _destinationName = newName;
+
+            Action apply = () =>
+            {
+                if (string.IsNullOrWhiteSpace(_destinationName))
+                {
+                    _destinationNamePosition = null;
+                }
+                else
+                {
+                    _destinationNamePosition = null;
+                    UpdateDestinationFromName(true);
+                }
+            };
+
+            if (fromStorage)
+            {
+                WithSaveSuppressed(apply);
+            }
+            else
+            {
+                apply();
+            }
+
+            if (changed && !fromStorage)
+            {
+                if (AreClose(originalDestination, _destination, POSITION_EPSILON))
+                {
+                    Save();
+                }
+            }
+        }
+
+        private void SetDestinationTolerance(double value, bool fromStorage)
+        {
+            var sanitized = Math.Max(0.0, value);
+            if (Math.Abs(sanitized - _destinationTolerance) < 0.01)
+            {
+                return;
+            }
+
+            Action apply = () => _destinationTolerance = sanitized;
+
+            if (fromStorage)
+            {
+                WithSaveSuppressed(apply);
+            }
+            else
+            {
+                apply();
+                Save();
+            }
+        }
+
+        private void SetMinDistanceFromDestination(double value, bool fromStorage)
+        {
+            var sanitized = Math.Max(0.0, value);
+            var expandMax = sanitized > _maxDistanceFromDestination;
+            if (Math.Abs(sanitized - _minDistanceFromDestination) < 0.01 && !expandMax)
+            {
+                return;
+            }
+
+            Action apply = () =>
+            {
+                _minDistanceFromDestination = sanitized;
+                if (expandMax)
+                {
+                    _maxDistanceFromDestination = sanitized;
+                }
+            };
+
+            if (fromStorage)
+            {
+                WithSaveSuppressed(apply);
+            }
+            else
+            {
+                apply();
+                _needsRecompute = true;
+                Save();
+            }
+        }
+
+        private void SetMaxDistanceFromDestination(double value, bool fromStorage)
+        {
+            var sanitized = Math.Max(0.0, value);
+            var reduceMin = sanitized < _minDistanceFromDestination;
+            if (Math.Abs(sanitized - _maxDistanceFromDestination) < 0.01 && !reduceMin)
+            {
+                return;
+            }
+
+            Action apply = () =>
+            {
+                _maxDistanceFromDestination = sanitized;
+                if (reduceMin)
+                {
+                    _minDistanceFromDestination = sanitized;
+                }
+            };
+
+            if (fromStorage)
+            {
+                WithSaveSuppressed(apply);
+            }
+            else
+            {
+                apply();
+                _needsRecompute = true;
+                Save();
+            }
+        }
+
+        private void SetMaxRdpDistanceFromDestination(double value, bool fromStorage)
+        {
+            var sanitized = Math.Max(0.0, value);
+            if (Math.Abs(sanitized - _maxRdpDistanceFromDestination) < 0.01)
+            {
+                return;
+            }
+
+            Action apply = () =>
+            {
+                _maxRdpDistanceFromDestination = sanitized;
+            };
+
+            if (fromStorage)
+            {
+                WithSaveSuppressed(apply);
+            }
+            else
+            {
+                apply();
+                Save();
+            }
+        }
+
+        private void SetEnableDynamicPathRefinement(bool value, bool fromStorage)
+        {
+            if (value == _enableDynamicPathRefinement)
+            {
+                return;
+            }
+
+            Action apply = () =>
+            {
+                _enableDynamicPathRefinement = value;
+            };
+
+            if (fromStorage)
+            {
+                WithSaveSuppressed(apply);
+            }
+            else
+            {
+                apply();
+                Save();
+            }
+        }
+
+        private void UpdateDestinationFromName(bool force = false)
+        {
+            if (string.IsNullOrWhiteSpace(_destinationName))
+            {
+                return;
+            }
+
+            var gpsList = Utils.GetGpsList();
+            var match = gpsList.FirstOrDefault(g =>
+            {
+                if (g == null || string.IsNullOrWhiteSpace(g.Name))
+                {
+                    return false;
+                }
+
+                var gpsName = g.Name;
+                if (string.Equals(gpsName, _destinationName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+
+                var separator = " - ";
+                var separatorIndex = gpsName.IndexOf(separator, StringComparison.OrdinalIgnoreCase);
+                if (separatorIndex >= 0)
+                {
+                    var nameBeforeSeparator = gpsName.Substring(0, separatorIndex);
+                    if (string.Equals(nameBeforeSeparator, _destinationName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+
+                if (gpsName.StartsWith(_destinationName + separator, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+
+                return false;
+            });
+
+            if (match == null)
+            {
+                Utils.ShowHudMessage("No GPS found for destination name: " + _destinationName);
+                return;
+            }
+
+            var coords = match.Coords;
+            var coordsChanged = !_destinationNamePosition.HasValue || !AreClose(_destinationNamePosition, coords, _destinationTolerance);
+            if (coordsChanged || force)
+            {
+                _destinationNamePosition = coords;
+                SetDestinationForced(coords);
+            }
+        }
+
+        private void UpdateDestinationNameFromCoordinates()
+        {
+            if (!_destination.HasValue)
+            {
+                _destinationNamePosition = null;
+                if (!string.IsNullOrWhiteSpace(_destinationName))
+                {
+                    _destinationName = string.Empty;
+                }
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(_destinationName))
+            {
+                _destinationNamePosition = _destination;
+                return;
+            }
+
+            var gpsList = Utils.GetGpsList();
+            var match = gpsList.FirstOrDefault(g => g != null && Vector3D.DistanceSquared(g.Coords, _destination.Value) < 0.1);
+            if (match != null)
+            {
+                _destinationName = match.Name ?? string.Empty;
+                _destinationNamePosition = match.Coords;
+            }
+            else
+            {
+                _destinationNamePosition = _destination;
+            }
         }
 
         private static bool AreClose(Vector3D? a, Vector3D? b, double tolerance)

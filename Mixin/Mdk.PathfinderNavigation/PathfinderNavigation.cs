@@ -182,6 +182,26 @@ namespace IngameScript
             destinationProperty.SetValue(_remoteControl, destination);
         }
 
+        public void SetDestination(string gpsName)
+        {
+            if (!_initialized)
+            {
+                _remoteControl.Log("Error: PathfinderDestination not initialized");
+                return;
+            }
+
+            var destinationNameProperty =
+                _remoteControl.GetProperty("PathfinderDestinationName") as ITerminalProperty<string>;
+            if (destinationNameProperty == null)
+            {
+                _remoteControl.Log("PathfinderDestinationName property not found");
+                return;
+            }
+
+            _remoteControl.Log($"Setting destination name to {gpsName}");
+            destinationNameProperty.SetValue(_remoteControl, gpsName);
+        }
+
         private List<Vector3D> ParsePath(bool dpr)
         {
             var propertyName = dpr ? "DPRPath" : "PathfinderPath";
@@ -280,6 +300,12 @@ namespace IngameScript
         public void Start(Vector3D destination)
         {
             SetDestination(destination);
+            Start();
+        }
+
+        public void Start(string gpsName)
+        {
+            SetDestination(gpsName);
             Start();
         }
 

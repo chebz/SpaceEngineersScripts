@@ -359,9 +359,10 @@ namespace IngameScript
                 var state = CurrentState as SpiralMinerState;
                 if (state == null)
                 {
+                    _program.Echo("SpiralMiner: No state");
                     return;
                 }
-
+                _program.Echo($"SpiralMiner: OnPathfinderEvent: {eventName} in state: {state.GetType().Name}");
                 switch (eventName)
                 {
                     case "start":
@@ -527,7 +528,8 @@ namespace IngameScript
                     return false;
                 }
 
-                var command = $"start {gpsString} {_program.Me.CustomName}";
+                var programmableBlockName = _program.Me.CustomName;
+                var command = $"start {gpsString}|{programmableBlockName}";
                 if (!_pathfinderProgrammableBlock.TryRun(command))
                 {
                     _program.Echo($"SpiralMiner: Failed to start pathfinding with '{command}'");
@@ -568,14 +570,16 @@ namespace IngameScript
                     var callbackName = _program.Me.CustomName;
                     if (!string.IsNullOrEmpty(callbackName))
                     {
+                        _program.Echo($"Adding callback name: {callbackName}");
                         arguments.Add(callbackName);
                     }
                 }
 
                 var commandString = arguments.Count > 0
-                    ? $"{command} {string.Join(" ", arguments)}"
+                    ? $"{command} {string.Join("|", arguments)}"
                     : command;
 
+                _program.Echo($"Sending AutoDock command: {commandString}");
                 if (!_autodockProgrammableBlock.TryRun(commandString))
                 {
                     _program.Echo($"SpiralMiner: Failed to run AutoDock command '{commandString}'");
@@ -592,6 +596,7 @@ namespace IngameScript
                 {
                     stationName = "*";
                 }
+                _program.Echo($"Requesting dock to station: {stationName} and connector: {_section.DockingConnectorName.Value}");
                 return SendAutoDockCommand("dock", stationName, _section.DockingConnectorName.Value, true);
             }
 
@@ -1160,6 +1165,7 @@ namespace IngameScript
 
                 public override void Enter()
                 {
+                    _context._program.Echo("NavigateToBase State");
                     _context.UpdateStatus("NavigateToBase");
                     _commandIssued = true;
                     if (!_context.SendPathfinderCommand(_context._section.BaseGPS, "Base"))

@@ -155,6 +155,7 @@ namespace IngameScript
             private bool _isRunning;
             private int _nextDestinationIndex = -1;
             private int _lastDestinationIndex = -1;
+            private int _pingPongDirection = 1;
             private double _deltaSeconds;
 
             public PathfinderPatrolController(Program program, CustomDataConnector customDataConnector, IMyRemoteControl remoteControl, List<IMyTextSurface> statusSurfaces, IMyProgrammableBlock pathfinderProgrammableBlock)
@@ -187,9 +188,10 @@ namespace IngameScript
                     return false;
                 }
 
-                if (!HasValidGps(_section.PointA) || !HasValidGps(_section.PointB))
+                var gpsNames = ParseGpsNames(_section.GpsNames.Value);
+                if (gpsNames.Count < 2)
                 {
-                    _program.Echo("PathfinderPatrol: Configure PointA and PointB GPS values");
+                    _program.Echo("PathfinderPatrol: Configure at least 2 GPS names in GpsNames property (comma-delimited)");
                     return false;
                 }
 
@@ -197,6 +199,7 @@ namespace IngameScript
 
                 _isRunning = true;
                 _lastDestinationIndex = -1;
+                _pingPongDirection = 1;
                 _nextDestinationIndex = GetInitialDestinationIndex();
                 NavigateToCurrentDestination();
                 return true;
@@ -208,6 +211,7 @@ namespace IngameScript
                 _isRunning = false;
                 _nextDestinationIndex = -1;
                 _lastDestinationIndex = -1;
+                _pingPongDirection = 1;
 
                 TransitionTo(new IdleState(this));
                 _pathfinderProgrammableBlock?.TryRun("stop");
@@ -240,42 +244,48 @@ namespace IngameScript
 
             private int GetInitialDestinationIndex()
             {
-                if (_remoteControl == null)
+                var gpsNames = ParseGpsNames(_section.GpsNames.Value);
+                if (gpsNames.Count == 0)
                 {
                     return 0;
                 }
-
-                var position = _remoteControl.GetPosition();
-                var distanceToA = Vector3D.DistanceSquared(position, _section.PointA.Value);
-                var distanceToB = Vector3D.DistanceSquared(position, _section.PointB.Value);
-                return distanceToA <= distanceToB ? 0 : 1;
+                return 0;
             }
 
-            private bool HasValidGps(GPSProperty property)
+            private bool HasValidGpsName(string gpsName)
             {
-                return property != null && property.Value.LengthSquared() >= 1e-3;
+                return !string.IsNullOrWhiteSpace(gpsName);
             }
 
-            private GPSProperty GetPointProperty(int index)
+            private string GetGpsName(int index)
             {
-                return index == 0 ? _section.PointA : _section.PointB;
-            }
-
-            private string BuildGpsArgument(GPSProperty property, string defaultName)
-            {
-                if (property == null)
+                var gpsNames = ParseGpsNames(_section.GpsNames.Value);
+                if (index >= 0 && index < gpsNames.Count)
                 {
-                    return null;
+                    return gpsNames[index];
+                }
+                return null;
+            }
+
+            private List<string> ParseGpsNames(string gpsNamesString)
+            {
+                var result = new List<string>();
+                if (string.IsNullOrWhiteSpace(gpsNamesString))
+                {
+                    return result;
                 }
 
-                var gpsString = property.ValueToString();
-                if (string.IsNullOrEmpty(gpsString) || gpsString.StartsWith(":", StringComparison.Ordinal))
+                var parts = gpsNamesString.Split(',');
+                foreach (var part in parts)
                 {
-                    var coords = property.Value;
-                    gpsString = $"{defaultName}:{coords.X}:{coords.Y}:{coords.Z}";
+                    var trimmed = part.Trim();
+                    if (!string.IsNullOrWhiteSpace(trimmed))
+                    {
+                        result.Add(trimmed);
+                    }
                 }
 
-                return gpsString;
+                return result;
             }
 
             private bool SendPathfinderCommand(int destinationIndex)
@@ -285,23 +295,22 @@ namespace IngameScript
                     return false;
                 }
 
-                var property = GetPointProperty(destinationIndex);
-                var defaultName = destinationIndex == 0 ? "PointA" : "PointB";
-                var gpsArgument = BuildGpsArgument(property, defaultName);
-                if (string.IsNullOrWhiteSpace(gpsArgument))
+                var gpsName = GetGpsName(destinationIndex);
+                if (!HasValidGpsName(gpsName))
                 {
-                    _program.Echo($"PathfinderPatrol: GPS '{defaultName}' not configured");
+                    _program.Echo($"PathfinderPatrol: GPS name at index {destinationIndex} not configured");
                     return false;
                 }
 
-                var command = $"start {gpsArgument} {_program.Me.CustomName}";
+                var programmableBlockName = _program.Me.CustomName;
+                var command = $"start {gpsName}|{programmableBlockName}";
                 if (!_pathfinderProgrammableBlock.TryRun(command))
                 {
                     _program.Echo($"PathfinderPatrol: Failed to start pathfinding with '{command}'");
                     return false;
                 }
 
-                UpdateStatus("Navigating", $"Destination: {defaultName}");
+                UpdateStatus("Navigating", $"Destination: {gpsName}");
                 return true;
             }
 
@@ -323,12 +332,23 @@ namespace IngameScript
             private void OnNavigationCompleted(int destinationIndex)
             {
                 _lastDestinationIndex = destinationIndex;
-                _nextDestinationIndex = destinationIndex == 0 ? 1 : 0;
+                var gpsNames = ParseGpsNames(_section.GpsNames.Value);
+                var mode = GetPatrolMode();
+                _nextDestinationIndex = GetNextDestinationIndex(destinationIndex, gpsNames.Count, mode);
 
                 var waitSeconds = Math.Max(0, _section.WaitDuration.Value);
                 if (!_isRunning)
                 {
                     TransitionTo(new IdleState(this));
+                    return;
+                }
+
+                if (_nextDestinationIndex < 0)
+                {
+                    TransitionTo(new IdleState(this));
+                    UpdateStatus("Idle", "Patrol completed (oneway mode)");
+                    _isRunning = false;
+                    _section.StartOnLoad.Value = false;
                     return;
                 }
 
@@ -339,6 +359,52 @@ namespace IngameScript
                 else
                 {
                     TransitionTo(new WaitingState(this, waitSeconds, _nextDestinationIndex));
+                }
+            }
+
+            private string GetPatrolMode()
+            {
+                var mode = _section.PatrolMode.Value;
+                if (string.IsNullOrWhiteSpace(mode))
+                {
+                    return "circle";
+                }
+                mode = mode.Trim().ToLowerInvariant();
+                if (mode == "oneway" || mode == "pingpong" || mode == "circle")
+                {
+                    return mode;
+                }
+                return "circle";
+            }
+
+            private int GetNextDestinationIndex(int currentIndex, int waypointCount, string mode)
+            {
+                switch (mode)
+                {
+                    case "oneway":
+                        if (currentIndex + 1 >= waypointCount)
+                        {
+                            return -1;
+                        }
+                        return currentIndex + 1;
+
+                    case "pingpong":
+                        var nextIndex = currentIndex + _pingPongDirection;
+                        if (nextIndex < 0)
+                        {
+                            _pingPongDirection = 1;
+                            return 1;
+                        }
+                        if (nextIndex >= waypointCount)
+                        {
+                            _pingPongDirection = -1;
+                            return waypointCount - 2;
+                        }
+                        return nextIndex;
+
+                    case "circle":
+                    default:
+                        return (currentIndex + 1) % waypointCount;
                 }
             }
 
@@ -484,16 +550,17 @@ namespace IngameScript
             private class PatrolSection : Section
             {
                 private const double WAIT_DURATION_DEFAULT = 5.0;
+                private const string PATROL_MODE_DEFAULT = "circle";
 
-                public GPSProperty PointA { get; } = new GPSProperty("PointA", Vector3D.Zero, "PointA");
-                public GPSProperty PointB { get; } = new GPSProperty("PointB", Vector3D.Zero, "PointB");
+                public StringProperty GpsNames { get; } = new StringProperty("GpsNames", "", comment: "Comma-delimited list of GPS names (e.g., 'PointA,PointB,PointC')");
+                public StringProperty PatrolMode { get; } = new StringProperty("PatrolMode", PATROL_MODE_DEFAULT, comment: "Patrol mode: oneway (1,2,3,stop), pingpong (1,2,3,2,1), circle (1,2,3,1,2,3)");
                 public DoubleProperty WaitDuration { get; } = new DoubleProperty("WaitDuration", WAIT_DURATION_DEFAULT, comment: "Seconds to wait at each waypoint");
                 public BoolProperty StartOnLoad { get; } = new BoolProperty("StartOnLoad", false);
 
                 public PatrolSection() : base("PathfinderPatrol")
                 {
-                    _properties.Add(PointA);
-                    _properties.Add(PointB);
+                    _properties.Add(GpsNames);
+                    _properties.Add(PatrolMode);
                     _properties.Add(WaitDuration);
                     _properties.Add(StartOnLoad);
                 }

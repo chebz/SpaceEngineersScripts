@@ -12,6 +12,7 @@ using System.Globalization;
 using System.Text;
 using Pathfinder.OctreeAStar;
 using VRage.Game.Entity;
+using VRage.ModAPI;
 
 namespace Pathfinder
 {
@@ -415,6 +416,69 @@ namespace Pathfinder
                 return gpsList;
             }
             MyAPIGateway.Session.GPS.GetGpsList(MyAPIGateway.Session.Player.IdentityId, gpsList);
+
+            var player = MyAPIGateway.Session.Player;
+            var controlled = player?.Controller?.ControlledEntity;
+            var playerPosition = controlled?.Entity != null ? controlled.Entity.GetPosition() : player.GetPosition();
+
+            var gridEntities = new HashSet<IMyEntity>();
+            MyAPIGateway.Entities.GetEntities(gridEntities, entity => entity is IMyCubeGrid);
+            var beaconBlocks = new List<IMySlimBlock>();
+            foreach (var entity in gridEntities)
+            {
+                var grid = entity as IMyCubeGrid;
+                if (grid == null)
+                {
+                    continue;
+                }
+
+                beaconBlocks.Clear();
+                grid.GetBlocks(beaconBlocks, slim => slim?.FatBlock is IMyBeacon);
+
+                for (int i = 0; i < beaconBlocks.Count; i++)
+                {
+                    var beacon = beaconBlocks[i]?.FatBlock as IMyBeacon;
+                    if (beacon == null || beacon.MarkedForClose || beacon.Closed || !beacon.IsFunctional || !beacon.IsWorking)
+                    {
+                        continue;
+                    }
+
+                    var relation = beacon.GetUserRelationToOwner(MyAPIGateway.Session.Player.IdentityId);
+                    if (relation != MyRelationsBetweenPlayerAndBlock.Owner &&
+                        relation != MyRelationsBetweenPlayerAndBlock.FactionShare &&
+                        relation != MyRelationsBetweenPlayerAndBlock.Friends)
+                    {
+                        continue;
+                    }
+
+                    var position = beacon.GetPosition();
+                    var range = beacon.Radius;
+                    if (range > 0f)
+                    {
+                        var rangeSq = range * range;
+                        if (Vector3D.DistanceSquared(position, playerPosition) > rangeSq)
+                        {
+                            continue;
+                        }
+                    }
+                    var exists = gpsList.Any(gps => Vector3D.DistanceSquared(gps.Coords, position) < 1e-2);
+                    if (exists)
+                    {
+                        continue;
+                    }
+                    var name = beacon.CustomName;
+                    if (beacon.CubeGrid != null && !string.IsNullOrWhiteSpace(beacon.CubeGrid.DisplayName))
+                    {
+                        name = string.IsNullOrWhiteSpace(name) ? beacon.CubeGrid.DisplayName : $"{beacon.CubeGrid.DisplayName} - {name}";
+                    }
+                    if (string.IsNullOrWhiteSpace(name))
+                    {
+                        name = "Beacon";
+                    }
+                    var beaconGps = MyAPIGateway.Session.GPS.Create(name, string.Empty, position, false, false);
+                    gpsList.Add(beaconGps);
+                }
+            }
             return gpsList;
         }
 

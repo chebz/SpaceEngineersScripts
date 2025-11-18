@@ -1,33 +1,43 @@
-[h1]Pathfinder – Bi-directional Octree A*[/h1]
+[h1]Overview[/h1]
+Bi-directional Octree A* pathfinding solver API. Use with programmable block to find optimal paths through 3D space, avoiding obstacles and terrain while respecting altitude constraints. Supports dynamic path refinement for real-time obstacle avoidance.
+
 [quote]Alpha build – behaviour may change, use at your own risk.[/quote]
 
 [h2]Quick Requirements[/h2]
-Remote control facing forward, six-direction thrust, at least one gyro.
+Remote control. Pathfinder settings located in remote control terminal at the bottom.
 
 [h2]Terminal Properties[/h2]
 [list]
-[*] [b]PathfinderDestination[/b] (Vector3D?) – set/clear target (null clears).
+[*] [b]PathfinderDestination[/b] (Vector3D?) – set/clear target (null clears). Will automatically recompute path when set.
+[*] [b]PathfinderDestinationName[/b] (string) – GPS/beacon name to follow (matches grid name for beacons). An alternative way or setting destination, especially for mobile grids that don't have static position. Overrides PathfinderDestination property.
+[*] [b]PathfinderDestinationTolerance[/b] (double) – distance threshold for destination updates (default: 50m). When PathfinderDestinationName is set to mobile grid that moves, this determines the distance delta after which path is automatically recomputed.
+[*] [b]PathfinderMinDistanceFromDestination[/b] (double) – inner radius to skip when searching for destination (default: 0m).
+[*] [b]PathfinderMaxDistanceFromDestination[/b] (double) – outer radius to search for reachable destination (default: 50m).
+[*] [b]PathfinderMaxRdpDistanceFromDestination[/b] (double) – outer radius for dynamic path refinement destination search (default: 50m).
+[*] [b]PathfinderEnableDynamicPathRefinement[/b] (bool) – if enabled, uses dynamic obstacle avoidance; if disabled, DPR path goes directly to next master path waypoint (default: true).
 [*] [b]PathfinderPath[/b] / [b]DPRPath[/b] (string) – serialized master / refined paths.
 [*] [b]PathfinderStatus[/b] – NotStarted / Calculating / Ready / NoPath.
 [*] [b]CurrentWaypointIndex[/b] – current master waypoint.
-[*] [b]MinAltitude[/b] / [b]MaxAltitude[/b] – optional planet altitude clamps.
+[*] [b]PathfinderMinAltitude[/b] / [b]PathfinderMaxAltitude[/b] (double) – optional planet altitude clamps (sea level).
 [/list]
 
 [h2]Terminal Actions[/h2]
 [list]
 [*] [b]RecomputePath[/b] – rebuild with existing destination.
 [*] [b]ClearPath[/b] – abort and reset.
+[*] [b]ResetSettings[/b] – reset OctreeAStar settings to default values.
 [/list]
 
 [h2]Scripts & Links[/h2]
 [list]
 [*] Control script: [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3605172814]PathfinderNavigation[/url]
 [*] Source code: [url=https://github.com/chebz/SpaceEngineersScripts/tree/PathNav/Mods/Pathfinder]GitHub – Pathfinder[/url]
+[*] Youtube: [url=https://www.youtube.com/playlist?list=PLssyo5Ys-K81eaEgCfofpabpWO6Qu-3nN]Pathfinder - playlist[/url]
 [/list]
 
 [h2]Notes[/h2]
 [list]
-[*] Settings: [b]%AppData%\SpaceEngineers\Storage\[3597348725.sbm_]Pathfinder\PathfinderSettings.xml[/b].
-[*] Diagnostics log: [b]%AppData%\SpaceEngineers\Pathfinder.log[/b].
+[*] Additional Settings (mostly debug stuff): [b]%AppData%\SpaceEngineers\Storage\[3597348725.sbm_]Pathfinder\PathfinderSettings.xml[/b].
+[*] Diagnostics log: [b]%AppData%\SpaceEngineers\Pathfinder_[DateTime].log[/b].
 [/list]
 

@@ -10,6 +10,12 @@
                 <guid>7ff8e4a6-69ca-48d3-917e-8d8d4c3a4d9a</guid>
                 <guid>79df6c4d-962b-438f-b7b3-eca6c479d67d</guid>
                 <guid>3a75e1a9-bdc9-4a07-b5f1-9b9b6c1b0ed8</guid>
+                <guid>4d9c3b27-4120-4b7a-86d9-6fb5c9cf9bf3</guid>
+                <guid>f4e8f9c5-0e96-49aa-8f5d-4db4c0d0f8d4</guid>
+                <guid>1f1397f9-910a-4a4a-95da-63d74f7a3fd2</guid>
+                <guid>31cbad8e-6adb-4471-9f4a-67583515a69c</guid>
+                <guid>a2b3c4d5-e6f7-8901-2345-6789abcdef01</guid>
+                <guid>b3c4d5e6-f7a8-9012-3456-789abcdef012</guid>
             </RegisteredStorageGuids>
         </EntityComponent>
     </EntityComponents>

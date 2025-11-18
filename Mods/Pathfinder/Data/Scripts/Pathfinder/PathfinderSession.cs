@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Text;
 using Sandbox.ModAPI;
 using VRage.Game.Components;
@@ -30,8 +31,7 @@ namespace Pathfinder
         }
 
         public override void BeforeStart()
-        {
-            
+        {            
             // Separator
             var separator = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlSeparator, IMyRemoteControl>("");
             separator.SupportsMultipleBlocks = true;
@@ -105,7 +105,7 @@ namespace Pathfinder
             };
             MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(dprPathProperty);
 
-            // Goal property (visible)
+            // Destination property (hidden)
             var destinationProperty = MyAPIGateway.TerminalControls.CreateProperty<Vector3D?, IMyRemoteControl>("PathfinderDestination");
             destinationProperty.SupportsMultipleBlocks = true;
             destinationProperty.Visible = (rcBlock) => false;
@@ -133,6 +133,28 @@ namespace Pathfinder
                 }
             };
             MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(destinationProperty);
+
+            var destinationNameProperty = MyAPIGateway.TerminalControls.CreateProperty<string, IMyRemoteControl>("PathfinderDestinationName");
+            destinationNameProperty.SupportsMultipleBlocks = true;
+            destinationNameProperty.Visible = (rcBlock) => false;
+            destinationNameProperty.Enabled = (rcBlock) => true;
+            destinationNameProperty.Getter = (rcBlock) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                return nav != null ? nav.DestinationName : string.Empty;
+            };
+            destinationNameProperty.Setter = (rcBlock, value) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                if (nav == null)
+                {
+                    return;
+                }
+                nav.SetDestinationNameFromTerminal(value);
+            };
+            MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(destinationNameProperty);
 
             // GPS combo
             var gpsCombo = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlCombobox, IMyRemoteControl>("PathfinderGpsCombo");
@@ -173,10 +195,270 @@ namespace Pathfinder
                 return Utils.ComputeGpsKey(nav.Destination);
             };
             gpsCombo.Setter = (rcBlock, key) =>
-            {   
-                destinationProperty.Setter(rcBlock, Utils.GetGpsFromKey(key));
+            {
+                var gpsList = Utils.GetGpsList();
+                var match = gpsList.FirstOrDefault(g => g != null && g.Hash == key);
+                destinationProperty.Setter(rcBlock, match != null ? (Vector3D?)match.Coords : null);
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                if (nav != null)
+                {
+                    nav.SetDestinationNameFromTerminal(match?.Name);
+                }
             };
             MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(gpsCombo);
+
+            var destinationToleranceProperty = MyAPIGateway.TerminalControls.CreateProperty<double, IMyRemoteControl>("PathfinderDestinationTolerance");
+            destinationToleranceProperty.SupportsMultipleBlocks = true;
+            destinationToleranceProperty.Visible = (rcBlock) => true;
+            destinationToleranceProperty.Enabled = (rcBlock) => true;
+            destinationToleranceProperty.Getter = (rcBlock) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                return nav != null ? nav.DestinationTolerance : 50.0;
+            };
+            destinationToleranceProperty.Setter = (rcBlock, value) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                if (nav != null)
+                {
+                    nav.DestinationTolerance = value;
+                }
+            };
+            MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(destinationToleranceProperty);
+
+            var destinationToleranceSlider = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlSlider, IMyRemoteControl>("PathfinderDestinationToleranceSlider");
+            destinationToleranceSlider.Title = MyStringId.GetOrCompute("Destination Tolerance");
+            destinationToleranceSlider.Tooltip = MyStringId.GetOrCompute("Distance within which destination changes are ignored");
+            destinationToleranceSlider.SupportsMultipleBlocks = true;
+            destinationToleranceSlider.Visible = (rcBlock) => true;
+            destinationToleranceSlider.Enabled = (rcBlock) => true;
+            destinationToleranceSlider.SetLimits(0f, 5000f);
+            destinationToleranceSlider.Getter = (rcBlock) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                return nav != null ? (float)nav.DestinationTolerance : 50f;
+            };
+            destinationToleranceSlider.Setter = (rcBlock, value) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                if (nav != null)
+                {
+                    nav.DestinationTolerance = value;
+                }
+            };
+            destinationToleranceSlider.Writer = (rcBlock, builder) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                var tolerance = nav != null ? nav.DestinationTolerance : 50.0;
+                builder.AppendFormat(CultureInfo.InvariantCulture, "{0:N1} m", tolerance);
+            };
+            MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(destinationToleranceSlider);
+
+            var minDistanceProperty = MyAPIGateway.TerminalControls.CreateProperty<double, IMyRemoteControl>("PathfinderMinDistanceFromDestination");
+            minDistanceProperty.SupportsMultipleBlocks = true;
+            minDistanceProperty.Visible = (rcBlock) => true;
+            minDistanceProperty.Enabled = (rcBlock) => true;
+            minDistanceProperty.Getter = (rcBlock) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                return nav != null ? nav.MinDistanceFromDestination : 0.0;
+            };
+            minDistanceProperty.Setter = (rcBlock, value) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                if (nav != null)
+                {
+                    nav.MinDistanceFromDestination = value;
+                }
+            };
+            MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(minDistanceProperty);
+
+            var minDistanceSlider = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlSlider, IMyRemoteControl>("PathfinderMinDistanceFromDestinationSlider");
+            minDistanceSlider.Title = MyStringId.GetOrCompute("Min Dist From Dest");
+            minDistanceSlider.Tooltip = MyStringId.GetOrCompute("Inner radius to skip when searching for destination");
+            minDistanceSlider.SupportsMultipleBlocks = true;
+            minDistanceSlider.Visible = (rcBlock) => true;
+            minDistanceSlider.Enabled = (rcBlock) => true;
+            minDistanceSlider.SetLimits(0f, 5000f);
+            minDistanceSlider.Getter = (rcBlock) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                return nav != null ? (float)nav.MinDistanceFromDestination : 0f;
+            };
+            minDistanceSlider.Setter = (rcBlock, value) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                if (nav != null)
+                {
+                    nav.MinDistanceFromDestination = value;
+                }
+            };
+            minDistanceSlider.Writer = (rcBlock, builder) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                var distance = nav != null ? nav.MinDistanceFromDestination : 0.0;
+                builder.AppendFormat(CultureInfo.InvariantCulture, "{0:N1} m", distance);
+            };
+            MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(minDistanceSlider);
+
+            var maxDistanceProperty = MyAPIGateway.TerminalControls.CreateProperty<double, IMyRemoteControl>("PathfinderMaxDistanceFromDestination");
+            maxDistanceProperty.SupportsMultipleBlocks = true;
+            maxDistanceProperty.Visible = (rcBlock) => true;
+            maxDistanceProperty.Enabled = (rcBlock) => true;
+            maxDistanceProperty.Getter = (rcBlock) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                return nav != null ? nav.MaxDistanceFromDestination : 50.0;
+            };
+            maxDistanceProperty.Setter = (rcBlock, value) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                if (nav != null)
+                {
+                    nav.MaxDistanceFromDestination = value;
+                }
+            };
+            MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(maxDistanceProperty);
+
+            var maxDistanceSlider = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlSlider, IMyRemoteControl>("PathfinderMaxDistanceFromDestinationSlider");
+            maxDistanceSlider.Title = MyStringId.GetOrCompute("Max Dist From Dest");
+            maxDistanceSlider.Tooltip = MyStringId.GetOrCompute("Outer radius to search for a reachable destination");
+            maxDistanceSlider.SupportsMultipleBlocks = true;
+            maxDistanceSlider.Visible = (rcBlock) => true;
+            maxDistanceSlider.Enabled = (rcBlock) => true;
+            maxDistanceSlider.SetLimits(0f, 10000f);
+            maxDistanceSlider.Getter = (rcBlock) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                return nav != null ? (float)nav.MaxDistanceFromDestination : 50f;
+            };
+            maxDistanceSlider.Setter = (rcBlock, value) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                if (nav != null)
+                {
+                    nav.MaxDistanceFromDestination = value;
+                }
+            };
+            maxDistanceSlider.Writer = (rcBlock, builder) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                var distance = nav != null ? nav.MaxDistanceFromDestination : 50.0;
+                builder.AppendFormat(CultureInfo.InvariantCulture, "{0:N1} m", distance);
+            };
+            MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(maxDistanceSlider);
+
+            // Max RDP Distance From Destination property (visible)
+            var maxRdpDistanceProperty = MyAPIGateway.TerminalControls.CreateProperty<double, IMyRemoteControl>("PathfinderMaxRdpDistanceFromDestination");
+            maxRdpDistanceProperty.SupportsMultipleBlocks = true;
+            maxRdpDistanceProperty.Getter = (rcBlock) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                return nav != null ? nav.MaxRdpDistanceFromDestination : 50.0;
+            };
+            maxRdpDistanceProperty.Setter = (rcBlock, value) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                if (nav != null)
+                {
+                    nav.MaxRdpDistanceFromDestination = value;
+                }
+            };
+            MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(maxRdpDistanceProperty);
+
+            var maxRdpDistanceSlider = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlSlider, IMyRemoteControl>("PathfinderMaxRdpDistanceFromDestinationSlider");
+            maxRdpDistanceSlider.Title = MyStringId.GetOrCompute("Max RDP Dist From Dest");
+            maxRdpDistanceSlider.Tooltip = MyStringId.GetOrCompute("Outer radius to search for a reachable destination during dynamic path refinement");
+            maxRdpDistanceSlider.SupportsMultipleBlocks = true;
+            maxRdpDistanceSlider.Visible = (rcBlock) => true;
+            maxRdpDistanceSlider.Enabled = (rcBlock) => true;
+            maxRdpDistanceSlider.SetLimits(0f, 10000f);
+            maxRdpDistanceSlider.Getter = (rcBlock) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                return nav != null ? (float)nav.MaxRdpDistanceFromDestination : 50f;
+            };
+            maxRdpDistanceSlider.Setter = (rcBlock, value) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                if (nav != null)
+                {
+                    nav.MaxRdpDistanceFromDestination = value;
+                }
+            };
+            maxRdpDistanceSlider.Writer = (rcBlock, builder) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                var distance = nav != null ? nav.MaxRdpDistanceFromDestination : 50.0;
+                builder.AppendFormat(CultureInfo.InvariantCulture, "{0:N1} m", distance);
+            };
+            MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(maxRdpDistanceSlider);
+
+            // Enable Dynamic Path Refinement property (visible)
+            var enableDynamicPathRefinementProperty = MyAPIGateway.TerminalControls.CreateProperty<bool, IMyRemoteControl>("PathfinderEnableDynamicPathRefinement");
+            enableDynamicPathRefinementProperty.SupportsMultipleBlocks = true;
+            enableDynamicPathRefinementProperty.Visible = (rcBlock) => true;
+            enableDynamicPathRefinementProperty.Enabled = (rcBlock) => true;
+            enableDynamicPathRefinementProperty.Getter = (rcBlock) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                return nav != null ? nav.EnableDynamicPathRefinement : true;
+            };
+            enableDynamicPathRefinementProperty.Setter = (rcBlock, value) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                if (nav != null)
+                {
+                    nav.EnableDynamicPathRefinement = value;
+                }
+            };
+            MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(enableDynamicPathRefinementProperty);
+
+            var enableDynamicPathRefinementCheckbox = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlCheckbox, IMyRemoteControl>("PathfinderEnableDynamicPathRefinementCheckbox");
+            enableDynamicPathRefinementCheckbox.Title = MyStringId.GetOrCompute("Enable Dynamic Path Refinement");
+            enableDynamicPathRefinementCheckbox.Tooltip = MyStringId.GetOrCompute("If enabled, uses dynamic obstacle avoidance. If disabled, DPR path goes directly to next master path waypoint.");
+            enableDynamicPathRefinementCheckbox.SupportsMultipleBlocks = true;
+            enableDynamicPathRefinementCheckbox.Visible = (rcBlock) => true;
+            enableDynamicPathRefinementCheckbox.Enabled = (rcBlock) => true;
+            enableDynamicPathRefinementCheckbox.Getter = (rcBlock) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                return nav != null ? nav.EnableDynamicPathRefinement : true;
+            };
+            enableDynamicPathRefinementCheckbox.Setter = (rcBlock, value) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                if (nav != null)
+                {
+                    nav.EnableDynamicPathRefinement = value;
+                }
+            };
+            MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(enableDynamicPathRefinementCheckbox);
 
             // Min Altitude property (visible)
             var minAltitudeProperty = MyAPIGateway.TerminalControls.CreateProperty<double, IMyRemoteControl>("PathfinderMinAltitude");
@@ -329,6 +611,21 @@ namespace Pathfinder
             clearPathButton.Action = (rcBlock) => ClearPath(rcBlock);
             MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(clearPathButton);
 
+            var resetSettingsAction = MyAPIGateway.TerminalControls.CreateAction<IMyRemoteControl>("ResetSettings");
+            resetSettingsAction.Name = new StringBuilder("Reset Settings");
+            resetSettingsAction.Action = (rcBlock) => ResetSettings(rcBlock);
+            resetSettingsAction.Enabled = (rcBlock) => true;
+            resetSettingsAction.Writer = (rcBlock, builder) => builder.Append("Reset Settings");
+            MyAPIGateway.TerminalControls.AddAction<IMyRemoteControl>(resetSettingsAction);
+
+            var resetSettingsButton = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlButton, IMyRemoteControl>("ResetSettings");
+            resetSettingsButton.Title = MyStringId.GetOrCompute("Reset Settings");
+            resetSettingsButton.Tooltip = MyStringId.GetOrCompute("Reset OctreeAStar settings to default values");
+            resetSettingsButton.SupportsMultipleBlocks = true;
+            resetSettingsButton.Visible = (rcBlock) => true;
+            resetSettingsButton.Action = (rcBlock) => ResetSettings(rcBlock);
+            MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(resetSettingsButton);
+
             // Debug
             // var loadSettingsButton = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlButton, IMyRemoteControl>("LoadPathfinderSettings");
             // loadSettingsButton.Title = MyStringId.GetOrCompute("Load Settings");
@@ -373,6 +670,12 @@ namespace Pathfinder
                 return;
             }
             navigationComponent.ClearPath();
+        }
+
+        private void ResetSettings(IMyTerminalBlock rc)
+        {
+            OctreeAStarSettings.Instance.ResetToDefaults();
+            Utils.ShowHudMessage("Pathfinder settings reset to defaults");
         }
 
         private NavigationComponent GetNavigationComponent(IMyTerminalBlock rc, out string errorMessage)

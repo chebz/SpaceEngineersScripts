@@ -2,6 +2,7 @@ using VRageMath;
 using System;
 using Sandbox.ModAPI;
 using Pathfinder;
+using System.Xml.Serialization;
 
 namespace Pathfinder.OctreeAStar
 {
@@ -32,6 +33,7 @@ namespace Pathfinder.OctreeAStar
             LineThickness = lineThickness;
         }
 
+        [XmlIgnore]
         public Color Color
         {
             get { return new Color(ColorR, ColorG, ColorB, ColorA); }
@@ -57,12 +59,12 @@ namespace Pathfinder.OctreeAStar
         public DebugRenderSetting MeetSetting;
         public DebugRenderSetting DynamicObstaclesSetting;
         public bool RenderOctants = false;
-        public bool? RenderPath = true;
+        public bool RenderPath = true;
         public int MaxNodesPerFrame = 1;
         public double ExploreCostFactor = 0.75;
         public double ExploreCostFactorInTerrain = 10.0;
         public double AltitudeCostFactor = 1.0;
-        public int MaxPathOptimizationSteps = 100;
+        public int MaxPathOptimizationSteps = 10000;
         public double MaxRootSize = 1000.0;
         public double MinRootSize = 500.0;
         public double MaxDPRRootSize = 250.0;
@@ -78,12 +80,14 @@ namespace Pathfinder.OctreeAStar
     {
         private static OctreeAStarSettings _instance;
         private const string SETTINGS_FILE = "PathfinderSettings.xml";
+        private const double UPDATE_DELAY_S = 10.0;
+        private DateTime _lastUpdateTime = DateTime.MinValue;
 
         private const int DEFAULT_MAX_NODES_PER_FRAME = 1;
         private const double DEFAULT_EXPLORE_COST_FACTOR = 0.75;
         private const double DEFAULT_EXPLORE_COST_FACTOR_IN_TERRAIN = 10.0;
         private const double DEFAULT_ALTITUDE_COST_FACTOR = 1.0;
-        private const int DEFAULT_MAX_PATH_OPTIMIZATION_STEPS = 100;
+        private const int DEFAULT_MAX_PATH_OPTIMIZATION_STEPS = 10000;
         private static readonly DebugRenderSetting DEFAULT_OPEN_SETTING = new DebugRenderSetting("Open", true, Color.Green, true, 0.02f);
         private static readonly DebugRenderSetting DEFAULT_CLOSED_SETTING = new DebugRenderSetting("Closed", true, Color.Red, true, 0.02f);
         private static readonly DebugRenderSetting DEFAULT_OPEN_REVERSE_SETTING = new DebugRenderSetting("OpenReverse", true, Color.Blue, true, 0.02f);
@@ -119,6 +123,7 @@ namespace Pathfinder.OctreeAStar
         public DebugRenderSetting DynamicObstaclesSetting;
         public bool RenderOctants = DEFAULT_RENDER_OCTANTS;
         public bool RenderPath = DEFAULT_RENDER_PATH;
+        public float PathRenderThickness = DEFAULT_PATH_RENDER_THICKNESS;
         public bool RenderDynamicObstacles = DEFAULT_RENDER_DYNAMIC_OBSTACLES;
         public int MaxNodesPerFrame = DEFAULT_MAX_NODES_PER_FRAME;
         public double ExploreCostFactor = DEFAULT_EXPLORE_COST_FACTOR;
@@ -130,7 +135,6 @@ namespace Pathfinder.OctreeAStar
         public double MinRootSize = DEFAULT_MIN_ROOT_SIZE;
         public double MaxDPRRootSize = DEFAULT_MAX_DPR_ROOT_SIZE;
         public double MinDPRRootSize = DEFAULT_MIN_DPR_ROOT_SIZE;
-        public float PathRenderThickness = DEFAULT_PATH_RENDER_THICKNESS;
         public bool ShowPathfinderMessages = true;
         public double DPRMinAltitude = DEFAULT_DPR_MIN_ALTITUDE;
         public double DPRStepSize = DEFAULT_DPR_STEP_SIZE;
@@ -163,6 +167,7 @@ namespace Pathfinder.OctreeAStar
             UnexploredSetting = CloneSetting(DEFAULT_UNEXPLORED_SETTING);
             MeetSetting = CloneSetting(DEFAULT_MEET_SETTING);
             OccupiedSetting = CloneSetting(DEFAULT_OCCUPIED_SETTING);
+            DynamicObstaclesSetting = CloneSetting(DEFAULT_DYNAMIC_OBSTACLES_SETTING);
             RenderOctants = DEFAULT_RENDER_OCTANTS;
             RenderPath = DEFAULT_RENDER_PATH;
             RenderDynamicObstacles = DEFAULT_RENDER_DYNAMIC_OBSTACLES;
@@ -179,6 +184,12 @@ namespace Pathfinder.OctreeAStar
             ShowPathfinderMessages = true;
             DPRMinAltitude = DEFAULT_DPR_MIN_ALTITUDE;
             DPRStepSize = DEFAULT_DPR_STEP_SIZE;
+        }
+
+        public void ResetToDefaults()
+        {
+            InitializeDefaults();
+            Save();
         }
 
 
@@ -222,203 +233,99 @@ namespace Pathfinder.OctreeAStar
 
                 ShowPathfinderMessages = settingsData.ShowPathfinderMessages;
 
-                bool wroteDefaults = !showMessagesSpecified;
-
-                if (settingsData.OpenSetting == null) 
-                { 
-                    OpenSetting = CloneSetting(DEFAULT_OPEN_SETTING); 
-                    wroteDefaults = true; 
-                } 
-                else 
+                // Open
+                if (settingsData.OpenSetting != null) 
                 { 
                     OpenSetting = settingsData.OpenSetting; 
                 }
-                if (settingsData.ClosedSetting == null) 
-                { 
-                    ClosedSetting = CloneSetting(DEFAULT_CLOSED_SETTING); 
-                    wroteDefaults = true; 
-                } 
-                else 
+                // Closed
+                if (settingsData.ClosedSetting != null) 
                 { 
                     ClosedSetting = settingsData.ClosedSetting; 
                 }
-                if (settingsData.OpenReverseSetting == null) 
-                { 
-                    OpenReverseSetting = CloneSetting(DEFAULT_OPEN_REVERSE_SETTING); 
-                    wroteDefaults = true; 
-                } 
-                else 
+                // OpenReverse
+                if (settingsData.OpenReverseSetting != null) 
                 { 
                     OpenReverseSetting = settingsData.OpenReverseSetting; 
                 }
-                if (settingsData.ClosedReverseSetting == null) 
-                { 
-                    ClosedReverseSetting = CloneSetting(DEFAULT_CLOSED_REVERSE_SETTING); 
-                    wroteDefaults = true; 
-                } 
-                else 
+                // ClosedReverse
+                if (settingsData.ClosedReverseSetting != null) 
                 { 
                     ClosedReverseSetting = settingsData.ClosedReverseSetting; 
                 }
-                if (settingsData.NonLeafSetting == null) 
-                { 
-                    NonLeafSetting = CloneSetting(DEFAULT_NON_LEAF_SETTING); 
-                    wroteDefaults = true; 
-                } 
-                else 
+                // NonLeaf
+                if (settingsData.NonLeafSetting != null) 
                 { 
                     NonLeafSetting = settingsData.NonLeafSetting; 
                 }
-                if (settingsData.UnexploredSetting == null) 
-                { 
-                    UnexploredSetting = CloneSetting(DEFAULT_UNEXPLORED_SETTING); 
-                    wroteDefaults = true; 
-                } 
-                else 
+                // Unexplored
+                if (settingsData.UnexploredSetting != null) 
                 { 
                     UnexploredSetting = settingsData.UnexploredSetting; 
                 }
-                if (settingsData.OccupiedSetting == null) 
-                { 
-                    OccupiedSetting = CloneSetting(DEFAULT_OCCUPIED_SETTING); 
-                    wroteDefaults = true; 
-                } 
-                else 
+                // Occupied
+                if (settingsData.OccupiedSetting != null) 
                 { 
                     OccupiedSetting = settingsData.OccupiedSetting; 
                 }
-                if (settingsData.MeetSetting == null) 
-                { 
-                    MeetSetting = CloneSetting(DEFAULT_MEET_SETTING); 
-                    wroteDefaults = true; 
-                } 
-                else
+                // Meet
+                if (settingsData.MeetSetting != null) 
                 { 
                     MeetSetting = settingsData.MeetSetting; 
                 }
 
-                if (settingsData.DynamicObstaclesSetting == null)
-                {
-                    DynamicObstaclesSetting = CloneSetting(DEFAULT_DYNAMIC_OBSTACLES_SETTING);
-                    wroteDefaults = true;
-                }
-                else
+                // DynamicObstacles
+                if (settingsData.DynamicObstaclesSetting != null) 
                 {
                     DynamicObstaclesSetting = settingsData.DynamicObstaclesSetting;
                 }
 
-                MaxNodesPerFrame = settingsData.MaxNodesPerFrame > 0 ? settingsData.MaxNodesPerFrame : DEFAULT_MAX_NODES_PER_FRAME;
-                if (settingsData.MaxNodesPerFrame <= 0) 
-                {
-                    wroteDefaults = true;
-                }
+                // MaxNodesPerFrame
+                MaxNodesPerFrame = MathHelper.Clamp(settingsData.MaxNodesPerFrame, 1, 100);
 
-                if (settingsData.ExploreCostFactor <= 0)
-                {
-                    ExploreCostFactor = DEFAULT_EXPLORE_COST_FACTOR;
-                    wroteDefaults = true;
-                }
-                else
-                {
-                    ExploreCostFactor = settingsData.ExploreCostFactor;
-                }
+                // ExploreCostFactor
+                ExploreCostFactor = MathHelper.Clamp(settingsData.ExploreCostFactor, 0.0, 1000.0);
 
-                if (settingsData.AltitudeCostFactor <= 0)
-                {
-                    AltitudeCostFactor = DEFAULT_ALTITUDE_COST_FACTOR;
-                    wroteDefaults = true;
-                }
-                else
-                {
-                    AltitudeCostFactor = settingsData.AltitudeCostFactor;
-                }
+                // AltitudeCostFactor
+                AltitudeCostFactor = MathHelper.Clamp(settingsData.AltitudeCostFactor, 0.0, 1000.0);
 
-                if (settingsData.MaxPathOptimizationSteps <= 0)
-                {
-                    MaxPathOptimizationSteps = DEFAULT_MAX_PATH_OPTIMIZATION_STEPS;
-                    wroteDefaults = true;
-                }
-                else
-                {
-                    MaxPathOptimizationSteps = settingsData.MaxPathOptimizationSteps;
-                }
+                // MaxPathOptimizationSteps
+                MaxPathOptimizationSteps = MathHelper.Clamp(settingsData.MaxPathOptimizationSteps, 0, 10000);
 
+                // RenderOctants
                 RenderOctants = settingsData.RenderOctants;
 
-                if (settingsData.RenderPath.HasValue)
-                {
-                    RenderPath = settingsData.RenderPath.Value;
-                }
-                else
-                {
-                    RenderPath = DEFAULT_RENDER_PATH;
-                    wroteDefaults = true;
-                }
+                // RenderPath
+                RenderPath = settingsData.RenderPath;
 
-                if (settingsData.MaxRootSize <= 0)
-                {
-                    MaxRootSize = DEFAULT_MAX_ROOT_SIZE;
-                    wroteDefaults = true;
-                }
-                else
-                {
-                    MaxRootSize = settingsData.MaxRootSize;
-                }
+                // RenderDynamicObstacles
+                RenderDynamicObstacles = settingsData.RenderDynamicObstacles;
 
-                if (settingsData.MinRootSize <= 0)
-                {
-                    MinRootSize = DEFAULT_MIN_ROOT_SIZE;
-                    wroteDefaults = true;
-                }
-                else
-                {
-                    MinRootSize = settingsData.MinRootSize;
-                }
+                // PathRenderThickness
+                PathRenderThickness = MathHelper.Clamp(settingsData.PathRenderThickness, 0.01f, 1.0f);
+                
+                // MaxRootSize
+                MaxRootSize = MathHelper.Clamp(settingsData.MaxRootSize, 10.0, 10000.0);
 
-                if (settingsData.MaxDPRRootSize <= 0)
-                {
-                    MaxDPRRootSize = DEFAULT_MAX_DPR_ROOT_SIZE;
-                    wroteDefaults = true;
-                }
-                else
-                {
-                    MaxDPRRootSize = settingsData.MaxDPRRootSize;
-                }
+                // MinRootSize
+                MinRootSize = MathHelper.Clamp(settingsData.MinRootSize, 10.0, 10000.0);
 
-                if (settingsData.MinDPRRootSize <= 0)
-                {
-                    MinDPRRootSize = DEFAULT_MIN_DPR_ROOT_SIZE;
-                    wroteDefaults = true;
-                }
-                else
-                {
-                    MinDPRRootSize = settingsData.MinDPRRootSize;
-                }
+                // MaxDPRRootSize
+                MaxDPRRootSize = MathHelper.Clamp(settingsData.MaxDPRRootSize, 10.0, 10000.0);
 
-                if (settingsData.PathRenderThickness <= 0f)
-                {
-                    PathRenderThickness = DEFAULT_PATH_RENDER_THICKNESS;
-                    wroteDefaults = true;
-                }
-                else
-                {
-                    PathRenderThickness = settingsData.PathRenderThickness;
-                }
+                // MinDPRRootSize
+                MinDPRRootSize = MathHelper.Clamp(settingsData.MinDPRRootSize, 10.0, 10000.0);
 
-                DPRMinAltitude = settingsData.DPRMinAltitude;
-                DPRStepSize = settingsData.DPRStepSize;
+                // DPRMinAltitude
+                DPRMinAltitude = MathHelper.Clamp(settingsData.DPRMinAltitude, 0.0, 10000.0);
 
-                if (wroteDefaults)
-                {
-                    // Persist newly introduced defaults back to storage so future loads have them
-                    Save();
-                }
+                // DPRStepSize
+                DPRStepSize = MathHelper.Clamp(settingsData.DPRStepSize, 0.0, 10000.0);
             }
             catch (Exception ex)
             {
                 Utils.ShowHudMessage($"Error loading settings: {ex.Message}. Restoring defaults.");
                 InitializeDefaults();
-                Save();
             }
         }
 
@@ -438,6 +345,7 @@ namespace Pathfinder.OctreeAStar
                     OccupiedSetting = OccupiedSetting,
                     RenderOctants = RenderOctants,
                     RenderPath = RenderPath,
+                    RenderDynamicObstacles = RenderDynamicObstacles,
                     MaxNodesPerFrame = MaxNodesPerFrame,
                     ExploreCostFactor = ExploreCostFactor,
                     ExploreCostFactorInTerrain = ExploreCostFactorInTerrain,
@@ -448,7 +356,6 @@ namespace Pathfinder.OctreeAStar
                     MaxDPRRootSize = MaxDPRRootSize,
                     MinDPRRootSize = MinDPRRootSize,
                     PathRenderThickness = PathRenderThickness,
-                    RenderDynamicObstacles = RenderDynamicObstacles,
                     ShowPathfinderMessages = ShowPathfinderMessages,
                     DPRMinAltitude = DPRMinAltitude,
                     DPRStepSize = DPRStepSize,
@@ -469,7 +376,11 @@ namespace Pathfinder.OctreeAStar
 
         public void Update()
         {
-            Load();
+            if (DateTime.UtcNow - _lastUpdateTime > TimeSpan.FromSeconds(UPDATE_DELAY_S))
+            {
+                Load();
+                _lastUpdateTime = DateTime.UtcNow;
+            }
         }
     }
 }

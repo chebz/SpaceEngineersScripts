@@ -76,6 +76,8 @@ namespace IngameScript
                 return;
             }
 
+            Echo($"Handling command: {argument}");
+
             var trimmedArgument = argument.Trim();
             var spaceIndex = trimmedArgument.IndexOf(' ');
             var command = spaceIndex == -1 ? trimmedArgument : trimmedArgument.Substring(0, spaceIndex);
@@ -84,25 +86,39 @@ namespace IngameScript
             switch (command.ToLower())
             {
                 case "start":
-                    Vector3D destination = Vector3D.Zero;
-                    var hasDestination = false;
+                    Vector3D? destination = null;
+                    var gpsName = string.Empty;
                     var programmableBlockName = string.Empty;
 
                     if (!string.IsNullOrEmpty(payload))
                     {
-                        var argumentPartsIndex = payload.IndexOf(' ');
-                        var gpsFragment = argumentPartsIndex == -1 ? payload : payload.Substring(0, argumentPartsIndex);
-                        if (TryParseGps(gpsFragment, out destination))
+                        var pipeIndex = payload.IndexOf('|');
+                        if (pipeIndex >= 0)
                         {
-                            hasDestination = true;
-                            if (argumentPartsIndex != -1)
+                            var gpsFragment = payload.Substring(0, pipeIndex).TrimEnd();
+                            programmableBlockName = payload.Substring(pipeIndex + 1).Trim();
+
+                            Vector3D parsedDestination;
+                            if (TryParseGps(gpsFragment, out parsedDestination))
                             {
-                                programmableBlockName = payload.Substring(argumentPartsIndex + 1).Trim();
+                                destination = parsedDestination;
+                            }
+                            else
+                            {
+                                gpsName = gpsFragment;
                             }
                         }
                         else
                         {
-                            programmableBlockName = payload.Trim();
+                            Vector3D parsedDestination;
+                            if (TryParseGps(payload, out parsedDestination))
+                            {
+                                destination = parsedDestination;
+                            }
+                            else
+                            {
+                                gpsName = payload;
+                            }
                         }
                     }
 
@@ -111,10 +127,11 @@ namespace IngameScript
                         LinkProgrammableBlock(programmableBlockName);
                     }
 
-                    if (hasDestination)
+                    if (destination.HasValue)
                     {
+                        Echo($"Destination: {destination.Value}");
                         var currentPosition = Me.GetPosition();
-                        var distance = Vector3D.Distance(currentPosition, destination);
+                        var distance = Vector3D.Distance(currentPosition, destination.Value);
                         var gridSize = Me?.CubeGrid != null ? Me.CubeGrid.WorldAABB.Size.Length() : 0;
 
                         if (gridSize > 0 && distance <= gridSize * 2)
@@ -125,9 +142,14 @@ namespace IngameScript
                         }
                         else
                         {
-                            _pathfindingNavigation.Start(destination);
+                            _pathfindingNavigation.Start(destination.Value);
                             Echo("Starting pathfinding navigation...");
                         }
+                    }
+                    else if (!string.IsNullOrWhiteSpace(gpsName))
+                    {
+                        _pathfindingNavigation.Start(gpsName);
+                        Echo($"Starting pathfinding navigation to GPS '{gpsName}'...");
                     }
                     else
                     {
@@ -185,30 +207,35 @@ namespace IngameScript
             var parts = gpsString.Split(':');
             if (parts.Length < 4)
             {
+                Echo($"Less than 4 parts in GPS string: {gpsString}");
                 return false;
             }
 
             var offset = parts[0].Equals("GPS", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
             if (parts.Length - offset < 4)
             {
+                Echo($"Less than 4 parts in GPS string: {gpsString}");
                 return false;
             }
 
             double x;
             if (!double.TryParse(parts[offset + 1], out x))
             {
+                Echo($"Failed to parse X coordinate: {parts[offset + 1]}");
                 return false;
             }
 
             double y;
             if (!double.TryParse(parts[offset + 2], out y))
             {
+                Echo($"Failed to parse Y coordinate: {parts[offset + 2]}");
                 return false;
             }
 
             double z;
             if (!double.TryParse(parts[offset + 3], out z))
             {
+                Echo($"Failed to parse Z coordinate: {parts[offset + 3]}");
                 return false;
             }
 

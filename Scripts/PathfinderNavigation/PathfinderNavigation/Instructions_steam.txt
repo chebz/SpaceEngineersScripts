@@ -1,19 +1,41 @@
 [h1]PathfinderNavigation – Control Script[/h1]
 
-Programmable block script that issues commands to the Pathfinder mod.
+Programmable block script that issues commands to the Pathfinder mod and triggers callbacks to linked programmable blocks.
+
+[b]Requirements[/b]
+[list]
+[*] Functional [b]IMyRemoteControl[/b] on the same grid
+[*] [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3597348725]Pathfinder mod[/url] installed
+[/list]
 
 [b]Commands[/b]
 [list]
-[*] [b]start[/b]
-[*] [b]start GPS:Name:X:Y:Z:[/b]
-[*] [b]start GPS:Name:X:Y:Z: PBName[/b]
-[*] [b]stop[/b]
+[*] [b]start[/b] – Begin pathfinding to current destination (set via Pathfinder mod terminal)
+[*] [b]start GPS:Name:X:Y:Z:[/b] – Start pathfinding to GPS coordinates
+[*] [b]start GPSName[/b] – Start pathfinding to GPS name (searches GPS list and beacons)
+[*] [b]start GPSName|PBName[/b] – Start pathfinding and link callback PB (pipe separator)
+[*] [b]start GPS:Name:X:Y:Z:|PBName[/b] – Start with coordinates and link callback PB
+[*] [b]stop[/b] – Stop pathfinding
 [/list]
 
-Links:
+[b]Callbacks[/b]
+Sent to linked programmable block:
+[list]
+[*] [b]pf_start[/b] – Pathfinding started
+[*] [b]pf_stop[/b] – Pathfinding stopped
+[*] [b]pf_nopath[/b] – No path found
+[/list]
+
+[b]Notes[/b]
+[list]
+[*] GPS names match beacons by grid name (e.g., "MyGrid" matches "MyGrid - BeaconName")
+[*] Use pipe [b]|[/b] to link a programmable block for callbacks
+[*] Callback PB name is matched case-insensitively
+[/list]
+
+[b]Links[/b]
 [list]
 [*] Pathfinder mod: [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3597348725]Workshop – Pathfinder[/url]
 [*] Script source: [url=https://github.com/chebz/SpaceEngineersScripts/tree/PathNav/Scripts/PathfinderNavigation]GitHub – PathfinderNavigation[/url]
 [*] Example usage: [url=https://steamcommunity.com/sharedfiles/filedetails/?id=3604823270]PathfinderPatrol[/url]
 [/list]
-

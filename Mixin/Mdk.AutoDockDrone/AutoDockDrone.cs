@@ -117,7 +117,6 @@ namespace IngameScript
         {
             if (!_initialized)
             {
-                _program.Echo("AutoDockDrone not initialized"); 
                 return;
             }
 
@@ -340,6 +339,7 @@ namespace IngameScript
 
             public override void Enter()
             {
+                _context._program.Echo("Undocked State");
                 _context._navigation.Stop();
                 _context._alignment.Stop();
                 _context.InvokeUndocked();
@@ -363,6 +363,7 @@ namespace IngameScript
 
             public override void Enter()
             {
+                _context._program.Echo("Docked State");
                 _context._navigation.Stop();
                 _context._alignment.Stop();
                 _context._navigation.PowerOff();
@@ -560,6 +561,7 @@ namespace IngameScript
             {
                 if (_context._connector.Status == MyShipConnectorStatus.Connectable)
                 {
+                    _context._program.Echo("Connecting to connector");
                     _context._connector.Connect();
                     _context.TransitionTo(new DockedState(_context));
                     return;

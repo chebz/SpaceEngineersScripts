@@ -9,6 +9,19 @@ using Pathfinder;
 
 namespace Pathfinder.OctreeAStar
 {
+    public struct PathfindingParameters
+    {
+        public IMyRemoteControl RemoteControl;
+        public Vector3D Start;
+        public Vector3D End;
+        public double MinAltitude;
+        public double MaxAltitude;
+        public double MinDistanceFromDestination;
+        public double MaxDistanceFromDestination;
+        public bool EnableDynamicPathRefinement;
+        public List<MyOrientedBoundingBoxD> DynamicObstacles;
+    }
+
     public class Graph
     {
         #region Fields
@@ -111,6 +124,7 @@ namespace Pathfinder.OctreeAStar
         public int StepCount { get; private set; }
 
         public int ExploreCount { get; private set; }
+        public Action<Path.State> OnPathStateChanged;
         #endregion
 
         #region Methods
@@ -123,28 +137,35 @@ namespace Pathfinder.OctreeAStar
 
         public List<MyOrientedBoundingBoxD> DynamicObstacles => _dynamicObstacles;
 
-        public void BeginFindPath(IMyRemoteControl remoteControl, Vector3D start, Vector3D end, double minAltitude, double maxAltitude, bool enableDynamicPathRefinement = false, List<MyOrientedBoundingBoxD> dynamicObstacles = null)
+        public double MinDistanceFromDestination { get; private set; }
+
+        public double MaxDistanceFromDestination { get; private set; }
+
+        public void BeginFindPath(PathfindingParameters parameters)
         {
-            RemoteControl = remoteControl;
-            OwnGrid = remoteControl.CubeGrid;
+            RemoteControl = parameters.RemoteControl;
+            OwnGrid = parameters.RemoteControl.CubeGrid;
             AgentSize = OwnGrid.WorldVolume.Radius * 2;
-            MinAltitude = minAltitude;
-            MaxAltitude = maxAltitude;
-            _useDynamicObstacles = enableDynamicPathRefinement;
-            _dynamicObstacles = enableDynamicPathRefinement && dynamicObstacles != null
-                ? new List<MyOrientedBoundingBoxD>(dynamicObstacles)
+            MinAltitude = parameters.MinAltitude;
+            MaxAltitude = parameters.MaxAltitude;
+            MinDistanceFromDestination = Math.Max(0.0, parameters.MinDistanceFromDestination);
+            var sanitizedMax = Math.Max(0.0, parameters.MaxDistanceFromDestination);
+            MaxDistanceFromDestination = sanitizedMax < MinDistanceFromDestination ? MinDistanceFromDestination : sanitizedMax;
+            _useDynamicObstacles = parameters.EnableDynamicPathRefinement;
+            _dynamicObstacles = parameters.EnableDynamicPathRefinement && parameters.DynamicObstacles != null
+                ? new List<MyOrientedBoundingBoxD>(parameters.DynamicObstacles)
                 : null;
 
             var settings = OctreeAStarSettings.Instance;
-            var configuredMaxRootSize = enableDynamicPathRefinement ? settings.MaxDPRRootSize : settings.MaxRootSize;
-            var configuredMinRootSize = enableDynamicPathRefinement ? settings.MinDPRRootSize : settings.MinRootSize;
-            _originalStart = start;
-            Start = start;
-            End = end;
+            var configuredMaxRootSize = parameters.EnableDynamicPathRefinement ? settings.MaxDPRRootSize : settings.MaxRootSize;
+            var configuredMinRootSize = parameters.EnableDynamicPathRefinement ? settings.MinDPRRootSize : settings.MinRootSize;
+            _originalStart = parameters.Start;
+            Start = parameters.Start;
+            End = parameters.End;
             _currentStartOffsetIndex = 0;
             _endFound = false;
 
-            var distance = Vector3D.Distance(start, end);
+            var distance = Vector3D.Distance(parameters.Start, parameters.End);
             var scaledDistance = distance / 10.0;
             var effectiveMinRootSize = configuredMinRootSize > 0 ? configuredMinRootSize : 0.0;
             var effectiveMaxRootSize = configuredMaxRootSize > 0 ? configuredMaxRootSize : double.MaxValue;
@@ -199,6 +220,8 @@ namespace Pathfinder.OctreeAStar
                 state = Path.State.Calculating
             };
 
+            OnPathStateChanged?.Invoke(Path.state);
+
             var offsetDirection = StartOffsetDirections[_currentStartOffsetIndex];
             var offsetDistance = AgentSize * StartOffsetFactor;
             var offset = offsetDirection * offsetDistance;
@@ -249,6 +272,8 @@ namespace Pathfinder.OctreeAStar
                     state = Path.State.Ready
                 };
 
+                OnPathStateChanged?.Invoke(Path.state);
+
                 return;
             }
 
@@ -290,6 +315,7 @@ namespace Pathfinder.OctreeAStar
                 endOctant.isReverse = true;
                 OpenReverse.Add(endOctant);
             }
+
         }
 
         private bool TryAdvanceStartOffset()
@@ -358,6 +384,7 @@ namespace Pathfinder.OctreeAStar
 
                     Path.state = Path.State.NoPath;
                     Utils.ShowHudMessage("No path found");
+                    OnPathStateChanged?.Invoke(Path.state);
                     return;
                 }
             }
@@ -382,6 +409,7 @@ namespace Pathfinder.OctreeAStar
 
                     Path.state = Path.State.NoPath;
                     Utils.ShowHudMessage("No path found");
+                    OnPathStateChanged?.Invoke(Path.state);
                     return;
                 }
 
@@ -449,6 +477,7 @@ namespace Pathfinder.OctreeAStar
                 {
                     Path.state = Path.State.Ready;
                     ReconstructPath(current);
+                    OnPathStateChanged?.Invoke(Path.state);
                     return;
                 }
 
@@ -484,6 +513,7 @@ namespace Pathfinder.OctreeAStar
                             {
                                 ReconstructBidirectionalPath(current, other);
                             }
+                            OnPathStateChanged?.Invoke(Path.state);
                             return;
                         }
                         if (other.occupancy == Octant.OctantOccupancy.Unknown || other.occupancy == Octant.OctantOccupancy.PartialInTerrain)
@@ -587,33 +617,61 @@ namespace Pathfinder.OctreeAStar
 
         public bool TryFindEnd()
         {
-            // find the closest bounds to End that is Empty
-            // center
             var fullSize = new Vector3D(AgentSize, AgentSize, AgentSize);
             var halfSize = fullSize * 0.5;
 
-            var offsets = new Vector3D[]
+            var step = AgentSize;
+            if (step <= 1e-3)
             {
-                Vector3D.Zero,
-                new Vector3D(-AgentSize, 0, 0),
-                new Vector3D(AgentSize, 0, 0),
-                new Vector3D(0, -AgentSize, 0),
-                new Vector3D(0, AgentSize, 0),
-                new Vector3D(-AgentSize, -AgentSize, 0),
-                new Vector3D(-AgentSize, AgentSize, 0),
-                new Vector3D(AgentSize, -AgentSize, 0),
-                new Vector3D(AgentSize, AgentSize, 0)
-            };
+                step = 1.0;
+            }
 
-            for (int i = 0; i < offsets.Length; i++)
+            var effectiveMaxDistance = Math.Max(0.0, MaxDistanceFromDestination);
+            var effectiveMinDistance = Math.Max(0.0, Math.Min(MinDistanceFromDestination, effectiveMaxDistance));
+
+            var maxRing = (int)Math.Ceiling(effectiveMaxDistance / step);
+
+            for (int ring = 0; ring <= maxRing; ring++)
             {
-                var center = End + offsets[i];
-                var bounds = new BoundingBoxD(center - halfSize, center + halfSize);
-                var occupancy = Utils.GetOccupancy(bounds, OwnGrid, UseDynamicObstacles, _dynamicObstacles);
-                if (occupancy == Octant.OctantOccupancy.Empty)
+                for (int dx = -ring; dx <= ring; dx++)
                 {
-                    End = center;
-                    return true;
+                    for (int dy = -ring; dy <= ring; dy++)
+                    {
+                        for (int dz = -ring; dz <= ring; dz++)
+                        {
+                            if (ring == 0 && (dx != 0 || dy != 0 || dz != 0))
+                            {
+                                continue;
+                            }
+
+                            if (Math.Max(Math.Max(Math.Abs(dx), Math.Abs(dy)), Math.Abs(dz)) != ring)
+                            {
+                                continue;
+                            }
+
+                            var offset = new Vector3D(dx * step, dy * step, dz * step);
+                            var center = End + offset;
+                            var distance = Vector3D.Distance(End, center);
+
+                            if (distance < effectiveMinDistance - 1e-3)
+                            {
+                                continue;
+                            }
+
+                            if (distance > effectiveMaxDistance + 1e-3)
+                            {
+                                continue;
+                            }
+
+                            var bounds = new BoundingBoxD(center - halfSize, center + halfSize);
+                            var occupancy = Utils.GetOccupancy(bounds, OwnGrid, UseDynamicObstacles, _dynamicObstacles);
+                            if (occupancy == Octant.OctantOccupancy.Empty)
+                            {
+                                End = center;
+                                return true;
+                            }
+                        }
+                    }
                 }
             }
 

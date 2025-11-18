@@ -123,28 +123,29 @@ namespace IngameScript
             var spaceIndex = trimmed.IndexOf(' ');
             var command = spaceIndex >= 0 ? trimmed.Substring(0, spaceIndex).ToLower() : trimmed.ToLower();
             var commandArgs = spaceIndex >= 0 ? trimmed.Substring(spaceIndex + 1).Trim() : string.Empty;
-
+            
             switch (command)
             {
                 case "dock":
+                    Echo($"Handling dock command: {command} with args: {commandArgs}");
                     var stationName = "*";
                     var connectorName = "*";
                     var callbackName = string.Empty;
 
                     if (!string.IsNullOrEmpty(commandArgs))
                     {
-                        var tokens = commandArgs.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                        var tokens = commandArgs.Split(new[] { '|' }, StringSplitOptions.None);
                         if (tokens.Length >= 1)
                         {
-                            stationName = tokens[0];
+                            stationName = tokens[0].Trim();
                         }
                         if (tokens.Length >= 2)
                         {
-                            connectorName = tokens[1];
+                            connectorName = tokens[1].Trim();
                         }
                         if (tokens.Length >= 3)
                         {
-                            callbackName = tokens[2];
+                            callbackName = tokens[2].Trim();
                         }
                     }
 
@@ -153,6 +154,7 @@ namespace IngameScript
 
                     if (!string.IsNullOrEmpty(callbackName))
                     {
+                        Echo($"Linking callback programmable block: {callbackName}");
                         LinkCallbackProgrammableBlock(callbackName);
                     }
 
@@ -225,14 +227,17 @@ namespace IngameScript
         {
             if (_callbackProgrammableBlock == null)
             {
+                Echo("No callback programmable block found");
                 return;
             }
 
             if (!_callbackProgrammableBlock.IsFunctional)
             {
+                Echo("Callback programmable block is not functional");
                 return;
             }
 
+            Echo($"Triggering callback: {command} to {_callbackProgrammableBlock.CustomName}");
             _callbackProgrammableBlock.TryRun(command);
         }
 

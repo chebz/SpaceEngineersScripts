@@ -1,5 +1,37 @@
-﻿R e a d m e
------------
+﻿PathfinderNavigation
+====================
 
-In this file you can include any instructions or other comments you want to have injected onto the 
-top of your final script. You can safely delete this file if you do not want any such comments.
+Control script for Pathfinder mod navigation. Handles pathfinding commands and triggers callbacks to linked programmable blocks.
+
+Requirements
+------------
+- Functional `IMyRemoteControl` on the same grid
+- Pathfinder mod installed
+
+Setup
+-----
+1. Load script into a programmable block.
+2. Name the block with `[PF]` if you want other scripts to find it automatically.
+3. Script automatically finds and uses the remote control on the same grid.
+
+API
+---
+Commands (run in PB terminal):
+- `start` – Begin pathfinding to current destination (set via Pathfinder mod terminal)
+- `start GPS:Name:X:Y:Z:` – Start pathfinding to GPS coordinates
+- `start GPSName` – Start pathfinding to GPS name (searches GPS list and beacons)
+- `start GPSName|PBName` – Start pathfinding and link callback PB (pipe separator)
+- `start GPS:Name:X:Y:Z:|PBName` – Start with coordinates and link callback PB
+- `stop` – Stop pathfinding
+
+Callbacks (sent to linked programmable block):
+- `pf_start` – Pathfinding started
+- `pf_stop` – Pathfinding stopped
+- `pf_nopath` – No path found
+
+Notes
+-----
+- Destination can be set via Pathfinder mod terminal properties or command arguments
+- GPS names match beacons by grid name (e.g., "MyGrid" matches "MyGrid - BeaconName")
+- Use pipe `|` to link a programmable block for callbacks
+- Callback PB name is matched case-insensitively

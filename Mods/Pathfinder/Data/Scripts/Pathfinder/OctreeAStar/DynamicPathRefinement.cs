@@ -31,6 +31,11 @@ namespace Pathfinder.OctreeAStar
 
         public void Clear()
         {
+            _blockedVOIndex = -1;
+            _staticQueryResults.Clear();
+            _raycastResults.Clear();
+            _entityCache.Clear();
+            _velocityObstacles.Clear();
             _graph.Reset();
             _refinedPath = null;
             _refinedPathString = string.Empty;
@@ -47,7 +52,7 @@ namespace Pathfinder.OctreeAStar
             var path = _graph.Path;
             if (path == null)
             {
-                RenderRefinedPath();
+                Render();
                 return;
             }
 
@@ -80,10 +85,11 @@ namespace Pathfinder.OctreeAStar
             }
             else if (path.state == Path.State.NoPath)
             {
+                Utils.ShowHudMessage("No RDP path found");
                 Clear();
             }
 
-            RenderRefinedPath();
+            Render();
         }
 
         public void RefinePath(NavigationComponent navigation)
@@ -119,10 +125,22 @@ namespace Pathfinder.OctreeAStar
                 return;
             }
 
+            var currentPosition = remoteControl.GetPosition();
+            var nextWaypoint = points[waypointIndex];
+
+            if (!navigation.EnableDynamicPathRefinement)
+            {
+                _refinedPath = new Path
+                {
+                    points = new List<Vector3D> { currentPosition, nextWaypoint },
+                    state = Path.State.Ready
+                };
+                _refinedPathString = _refinedPath.ToString();
+                return;
+            }
+
             var segmentStart = points[waypointIndex - 1];
             var segmentEnd = points[waypointIndex];
-
-            var currentPosition = remoteControl.GetPosition();
 
             var segmentVector = segmentEnd - segmentStart;
             var segmentLength = segmentVector.Length();
@@ -213,30 +231,43 @@ namespace Pathfinder.OctreeAStar
                 return;
             }
 
-            _graph.BeginFindPath(remoteControl, currentPosition, targetPoint, navigation.MinAltitude, navigation.MaxAltitude, true, _velocityObstacles);
+            var parameters = new PathfindingParameters
+            {
+                RemoteControl = remoteControl,
+                Start = currentPosition,
+                End = targetPoint,
+                MinAltitude = navigation.MinAltitude,
+                MaxAltitude = navigation.MaxAltitude,
+                MinDistanceFromDestination = navigation.MinDistanceFromDestination,
+                MaxDistanceFromDestination = navigation.MaxRdpDistanceFromDestination,
+                EnableDynamicPathRefinement = true,
+                DynamicObstacles = _velocityObstacles
+            };
+            _graph.BeginFindPath(parameters);
 
             Update(navigation);
         }
 
-        private void RenderRefinedPath()
+        private void Render()
         {
             if (_refinedPath == null)
             {
                 return;
             }
 
-            if (!OctreeAStarSettings.Instance.RenderPath)
+            if (OctreeAStarSettings.Instance.RenderPath)
             {
-                return;
+                _refinedPath.Render(Color.Red, false);
             }
 
-            _refinedPath.Render(Color.Red, false);
-            // Utils.DrawOBB(_pathObb, Color.Beige, true);
-            // for (int i = 0; i < _velocityObstacles.Count; i++)
-            // {
-            //     var color = i == _blockedVOIndex ? Color.Red : Color.Green;
-            //     Utils.DrawOBB(_velocityObstacles[i], color, true);
-            // }
+            if (OctreeAStarSettings.Instance.RenderDynamicObstacles)
+            {
+                for (int i = 0; i < _velocityObstacles.Count; i++)
+                {
+                    var color = i == _blockedVOIndex ? Color.Red : Color.Green;
+                    Utils.DrawOBB(_velocityObstacles[i], color, true);
+                }
+            }
         }
 
         private void BuildDynamicObstacles(NavigationComponent navigation, double timeHorizon)
@@ -299,8 +330,7 @@ namespace Pathfinder.OctreeAStar
             var length = direction.Length();
             var directionNormalized = length > 1e-6 ? direction / length : Vector3D.Zero;
 
-            var halfExtents = new Vector3D(agentSize * 0.5, agentSize * 0.5, agentSize * 0.5);
-            if (navigation.RemoteControl.GetNaturalGravity().LengthSquared() > 1e-6)
+            if (length > OctreeAStarSettings.Instance.DPRStepSize && navigation.RemoteControl.GetNaturalGravity().LengthSquared() > 1e-6)
             {
                 var planet = MyGamePruningStructure.GetClosestPlanet(start);
                 if (planet != null)
@@ -308,6 +338,7 @@ namespace Pathfinder.OctreeAStar
                     var downRayLength = OctreeAStarSettings.Instance.DPRMinAltitude;
                     var step = OctreeAStarSettings.Instance.DPRStepSize;
                     var stepCount = length > 1e-6 ? Math.Max(1, (int)Math.Ceiling(length / step)) : 1;
+                    stepCount -= 1; // ignore the last step because it can be too close to the destination near the ground
                     for (int i = 0; i <= stepCount; i++)
                     {
                         var distanceAlong = Math.Min(length, i * step);
@@ -321,16 +352,20 @@ namespace Pathfinder.OctreeAStar
                     }
                 }
             }
+            length = Math.Min(length, OctreeAStarSettings.Instance.DPRStepSize);
+            var halfExtents = new Vector3D(agentSize * 0.5, agentSize * 0.5, agentSize * 0.5);
+            var correctedEnd = start + directionNormalized * length;
+            
             if (length < 1e-6)
             {
                 _pathObb = new MyOrientedBoundingBoxD(start, halfExtents, Quaternion.Identity);
             }
             else
             {
-                halfExtents.Z = length * 0.5 + agentSize;
-                var pathStart = start + direction * 0.5;
-                var up = Vector3D.CalculatePerpendicularVector(direction.Normalized());
-                var quatRotation = Quaternion.CreateFromForwardUp(direction.Normalized(), up);
+                halfExtents.Z = correctedEnd.Z * 0.5 + agentSize;
+                var pathStart = start + correctedEnd * 0.5;
+                var up = Vector3D.CalculatePerpendicularVector(directionNormalized);
+                var quatRotation = Quaternion.CreateFromForwardUp(directionNormalized, up);
                 _pathObb = new MyOrientedBoundingBoxD(pathStart, halfExtents, quatRotation);
             }
 
