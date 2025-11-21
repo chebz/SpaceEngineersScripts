@@ -1,0 +1,39 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.13.35818.85 d17.13
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SquadNavigation", "SquadNavigation\SquadNavigation.csproj", "{F8A2CE6F-C0F2-4B13-88C1-8565F6D3D1BC}"
+EndProject
+Project("{D954291E-2A0B-460D-934E-DC6B0785DB48}") = "Mdk.Utils", "..\..\Mixin\Mdk.Utils\Mdk.Utils.shproj", "{80F3AB8A-AF18-4C83-B2D2-B559AADA29FF}"
+EndProject
+Project("{D954291E-2A0B-460D-934E-DC6B0785DB48}") = "Mdk.StateMachine", "..\..\Mixin\Mdk.StateMachine\Mdk.StateMachine.shproj", "{1C3F7317-7C4A-4A29-A1FC-EF6294D9807A}"
+EndProject
+Project("{D954291E-2A0B-460D-934E-DC6B0785DB48}") = "Mdk.CustomDataConnector", "..\..\Mixin\Mdk.CustomDataConnector\Mdk.CustomDataConnector.shproj", "{20273712-5FDE-4021-AA70-EDF2506E507C}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{F8A2CE6F-C0F2-4B13-88C1-8565F6D3D1BC}.Debug|x64.ActiveCfg = Debug|x64
+		{F8A2CE6F-C0F2-4B13-88C1-8565F6D3D1BC}.Debug|x64.Build.0 = Debug|x64
+		{F8A2CE6F-C0F2-4B13-88C1-8565F6D3D1BC}.Release|x64.ActiveCfg = Release|x64
+		{F8A2CE6F-C0F2-4B13-88C1-8565F6D3D1BC}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {12BD7B3A-7C2F-4751-B456-6451B3AC99B4}
+	EndGlobalSection
+	GlobalSection(SharedMSBuildProjectFiles) = preSolution
+		..\..\Mixin\Mdk.StateMachine\Mdk.StateMachine.projitems*{1c3f7317-7c4a-4a29-a1fc-ef6294d9807a}*SharedItemsImports = 13
+		..\..\Mixin\Mdk.CustomDataConnector\Mdk.CustomDataConnector.projitems*{20273712-5fde-4021-aa70-edf2506e507c}*SharedItemsImports = 13
+		..\..\Mixin\Mdk.Utils\Mdk.Utils.projitems*{80f3ab8a-af18-4c83-b2d2-b559aada29ff}*SharedItemsImports = 13
+		..\..\Mixin\Mdk.CustomDataConnector\Mdk.CustomDataConnector.projitems*{f8a2ce6f-c0f2-4b13-88c1-8565f6d3d1bc}*SharedItemsImports = 5
+		..\..\Mixin\Mdk.StateMachine\Mdk.StateMachine.projitems*{f8a2ce6f-c0f2-4b13-88c1-8565f6d3d1bc}*SharedItemsImports = 5
+		..\..\Mixin\Mdk.Utils\Mdk.Utils.projitems*{f8a2ce6f-c0f2-4b13-88c1-8565f6d3d1bc}*SharedItemsImports = 5
+	EndGlobalSection
+EndGlobal

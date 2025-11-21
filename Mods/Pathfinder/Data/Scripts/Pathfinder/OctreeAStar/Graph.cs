@@ -20,6 +20,7 @@ namespace Pathfinder.OctreeAStar
         public double MaxDistanceFromDestination;
         public bool EnableDynamicPathRefinement;
         public List<MyOrientedBoundingBoxD> DynamicObstacles;
+        public double AgentSize;
     }
 
     public class Graph
@@ -145,7 +146,7 @@ namespace Pathfinder.OctreeAStar
         {
             RemoteControl = parameters.RemoteControl;
             OwnGrid = parameters.RemoteControl.CubeGrid;
-            AgentSize = OwnGrid.WorldVolume.Radius * 2;
+            AgentSize = parameters.AgentSize;
             MinAltitude = parameters.MinAltitude;
             MaxAltitude = parameters.MaxAltitude;
             MinDistanceFromDestination = Math.Max(0.0, parameters.MinDistanceFromDestination);
@@ -156,7 +157,7 @@ namespace Pathfinder.OctreeAStar
                 ? new List<MyOrientedBoundingBoxD>(parameters.DynamicObstacles)
                 : null;
 
-            var settings = OctreeAStarSettings.Instance;
+            var settings = PathfinderSettings.Instance;
             var configuredMaxRootSize = parameters.EnableDynamicPathRefinement ? settings.MaxDPRRootSize : settings.MaxRootSize;
             var configuredMinRootSize = parameters.EnableDynamicPathRefinement ? settings.MinDPRRootSize : settings.MinRootSize;
             _originalStart = parameters.Start;
@@ -176,6 +177,19 @@ namespace Pathfinder.OctreeAStar
             
 
             BeginFindPathInternal();
+        }
+
+        public void SetSimplePath(Vector3D start, Vector3D end)
+        {
+            Path = new Path
+            {
+                state = Path.State.Ready,
+                points = new List<Vector3D> { start, end }
+            };
+            if (OnPathStateChanged != null)
+            {
+                OnPathStateChanged(Path.State.Ready);
+            }
         }
 
         public void Reset()
@@ -347,7 +361,7 @@ namespace Pathfinder.OctreeAStar
                 return;
             }
 
-            var settings = OctreeAStarSettings.Instance;
+            var settings = PathfinderSettings.Instance;
             if (settings != null)
             {
                 maxNodesPerFrame = settings.MaxNodesPerFrame;
@@ -788,7 +802,7 @@ namespace Pathfinder.OctreeAStar
                 return;
             }
 
-            var settings = OctreeAStarSettings.Instance;
+            var settings = PathfinderSettings.Instance;
             var maxOptimizationSteps = maxPathOptimizationSteps;
             if (settings != null)
             {
@@ -1006,11 +1020,11 @@ namespace Pathfinder.OctreeAStar
 
         public void Render()
         {
-            if (Root != null && OctreeAStarSettings.Instance.RenderOctants)
+            if (Root != null && PathfinderSettings.Instance.RenderOctants)
             {
                 Root.Render();
             }
-            if (Path != null && OctreeAStarSettings.Instance.RenderPath)
+            if (Path != null && PathfinderSettings.Instance.RenderPath)
             {
                 Path.Render(Color.Cyan, true);
             }

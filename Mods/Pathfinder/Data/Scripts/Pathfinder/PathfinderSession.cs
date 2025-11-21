@@ -22,7 +22,7 @@ namespace Pathfinder
             Utils.InitializeLog();
 
             MyAPIGateway.Utilities.ShowMessage("Pathfinder", "Pathfinder loaded.");
-            OctreeAStarSettings.Instance.Load();
+            PathfinderSettings.Instance.Load();
         }
 
         protected override void UnloadData()
@@ -88,22 +88,78 @@ namespace Pathfinder
             };
             MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(currentWaypointIndexProperty);
 
-            // Dynamic path refinement path property (hidden)
-            var dprPathProperty = MyAPIGateway.TerminalControls.CreateProperty<string, IMyRemoteControl>("DPRPath");
-            dprPathProperty.SupportsMultipleBlocks = true;
-            dprPathProperty.Visible = (rcBlock) => false;
-            dprPathProperty.Enabled = (rcBlock) => true;
-            dprPathProperty.Getter = (rcBlock) =>
+            // Collision Avoidance Target property (hidden)
+            var caTargetProperty = MyAPIGateway.TerminalControls.CreateProperty<Vector3D?, IMyRemoteControl>("PathfinderCATarget");
+            caTargetProperty.SupportsMultipleBlocks = true;
+            caTargetProperty.Visible = (rcBlock) => false;
+            caTargetProperty.Enabled = (rcBlock) => true;
+            caTargetProperty.Getter = (rcBlock) =>
             {
                 string error;
                 var nav = GetNavigationComponent(rcBlock, out error);
-                return nav != null ? nav.GetRefinedPathString() : string.Empty;
+                return nav != null ? nav.CATarget : null;
             };
-            dprPathProperty.Setter = (rcBlock, value) =>
+            caTargetProperty.Setter = (rcBlock, value) =>
             {
-                // Intentionally left blank - refined path is managed internally
+                // Intentionally left blank - CATarget is managed internally
             };
-            MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(dprPathProperty);
+            MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(caTargetProperty);
+
+            // Target Speed property (hidden)
+            var targetVelocityProperty = MyAPIGateway.TerminalControls.CreateProperty<Vector3D?, IMyRemoteControl>("PathfinderTargetVelocity");
+            targetVelocityProperty.SupportsMultipleBlocks = true;
+            targetVelocityProperty.Visible = (rcBlock) => false;
+            targetVelocityProperty.Enabled = (rcBlock) => true;
+            targetVelocityProperty.Getter = (rcBlock) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                return nav != null ? nav.TargetVelocity : null;
+            };
+            targetVelocityProperty.Setter = (rcBlock, value) =>
+            {
+                // Intentionally left blank - TargetVelocity is managed internally
+            };
+            MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(targetVelocityProperty);
+
+            // Target Matrix property (hidden)
+            var targetMatrixProperty = MyAPIGateway.TerminalControls.CreateProperty<MatrixD?, IMyRemoteControl>("PathfinderTargetMatrix");
+            targetMatrixProperty.SupportsMultipleBlocks = true;
+            targetMatrixProperty.Visible = (rcBlock) => false;
+            targetMatrixProperty.Enabled = (rcBlock) => true;
+            targetMatrixProperty.Getter = (rcBlock) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                return nav != null ? nav.TargetMatrix : null;
+            };
+            targetMatrixProperty.Setter = (rcBlock, value) =>
+            {
+                // Intentionally left blank - TargetMatrix is managed internally
+            };
+            MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(targetMatrixProperty);
+
+            // Destination Offset property (hidden)
+            var offsetProperty = MyAPIGateway.TerminalControls.CreateProperty<Vector3D, IMyRemoteControl>("PathfinderOffset");
+            offsetProperty.SupportsMultipleBlocks = true;
+            offsetProperty.Visible = (rcBlock) => false;
+            offsetProperty.Enabled = (rcBlock) => true;
+            offsetProperty.Getter = (rcBlock) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                return nav != null ? nav.DestinationOffset : Vector3D.Zero;
+            };
+            offsetProperty.Setter = (rcBlock, value) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                if (nav != null)
+                {
+                    nav.DestinationOffset = value;
+                }
+            };
+            MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(offsetProperty);
 
             // Destination property (hidden)
             var destinationProperty = MyAPIGateway.TerminalControls.CreateProperty<Vector3D?, IMyRemoteControl>("PathfinderDestination");
@@ -118,6 +174,7 @@ namespace Pathfinder
             };
             destinationProperty.Setter = (rcBlock, value) =>
             {
+                Utils.ShowHudMessage("Destination set to " + (value.HasValue ? value.Value.ToString() : "null"));
                 string error;
                 var nav = GetNavigationComponent(rcBlock, out error);
                 if (nav != null)
@@ -146,6 +203,7 @@ namespace Pathfinder
             };
             destinationNameProperty.Setter = (rcBlock, value) =>
             {
+                Utils.ShowHudMessage("Destination name set to " + value);
                 string error;
                 var nav = GetNavigationComponent(rcBlock, out error);
                 if (nav == null)
@@ -207,58 +265,6 @@ namespace Pathfinder
                 }
             };
             MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(gpsCombo);
-
-            var destinationToleranceProperty = MyAPIGateway.TerminalControls.CreateProperty<double, IMyRemoteControl>("PathfinderDestinationTolerance");
-            destinationToleranceProperty.SupportsMultipleBlocks = true;
-            destinationToleranceProperty.Visible = (rcBlock) => true;
-            destinationToleranceProperty.Enabled = (rcBlock) => true;
-            destinationToleranceProperty.Getter = (rcBlock) =>
-            {
-                string error;
-                var nav = GetNavigationComponent(rcBlock, out error);
-                return nav != null ? nav.DestinationTolerance : 50.0;
-            };
-            destinationToleranceProperty.Setter = (rcBlock, value) =>
-            {
-                string error;
-                var nav = GetNavigationComponent(rcBlock, out error);
-                if (nav != null)
-                {
-                    nav.DestinationTolerance = value;
-                }
-            };
-            MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(destinationToleranceProperty);
-
-            var destinationToleranceSlider = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlSlider, IMyRemoteControl>("PathfinderDestinationToleranceSlider");
-            destinationToleranceSlider.Title = MyStringId.GetOrCompute("Destination Tolerance");
-            destinationToleranceSlider.Tooltip = MyStringId.GetOrCompute("Distance within which destination changes are ignored");
-            destinationToleranceSlider.SupportsMultipleBlocks = true;
-            destinationToleranceSlider.Visible = (rcBlock) => true;
-            destinationToleranceSlider.Enabled = (rcBlock) => true;
-            destinationToleranceSlider.SetLimits(0f, 5000f);
-            destinationToleranceSlider.Getter = (rcBlock) =>
-            {
-                string error;
-                var nav = GetNavigationComponent(rcBlock, out error);
-                return nav != null ? (float)nav.DestinationTolerance : 50f;
-            };
-            destinationToleranceSlider.Setter = (rcBlock, value) =>
-            {
-                string error;
-                var nav = GetNavigationComponent(rcBlock, out error);
-                if (nav != null)
-                {
-                    nav.DestinationTolerance = value;
-                }
-            };
-            destinationToleranceSlider.Writer = (rcBlock, builder) =>
-            {
-                string error;
-                var nav = GetNavigationComponent(rcBlock, out error);
-                var tolerance = nav != null ? nav.DestinationTolerance : 50.0;
-                builder.AppendFormat(CultureInfo.InvariantCulture, "{0:N1} m", tolerance);
-            };
-            MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(destinationToleranceSlider);
 
             var minDistanceProperty = MyAPIGateway.TerminalControls.CreateProperty<double, IMyRemoteControl>("PathfinderMinDistanceFromDestination");
             minDistanceProperty.SupportsMultipleBlocks = true;
@@ -364,101 +370,160 @@ namespace Pathfinder
             };
             MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(maxDistanceSlider);
 
-            // Max RDP Distance From Destination property (visible)
-            var maxRdpDistanceProperty = MyAPIGateway.TerminalControls.CreateProperty<double, IMyRemoteControl>("PathfinderMaxRdpDistanceFromDestination");
-            maxRdpDistanceProperty.SupportsMultipleBlocks = true;
-            maxRdpDistanceProperty.Getter = (rcBlock) =>
+            // Max Collision Avoidance Distance From Destination property (visible)
+            var maxCADistanceProperty = MyAPIGateway.TerminalControls.CreateProperty<double, IMyRemoteControl>("PathfinderMaxCADistanceFromDestination");
+            maxCADistanceProperty.SupportsMultipleBlocks = true;
+            maxCADistanceProperty.Getter = (rcBlock) =>
             {
                 string error;
                 var nav = GetNavigationComponent(rcBlock, out error);
-                return nav != null ? nav.MaxRdpDistanceFromDestination : 50.0;
+                return nav != null ? nav.MaxCADistanceFromDestination : 50.0;
             };
-            maxRdpDistanceProperty.Setter = (rcBlock, value) =>
+            maxCADistanceProperty.Setter = (rcBlock, value) =>
             {
                 string error;
                 var nav = GetNavigationComponent(rcBlock, out error);
                 if (nav != null)
                 {
-                    nav.MaxRdpDistanceFromDestination = value;
+                    nav.MaxCADistanceFromDestination = value;
                 }
             };
-            MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(maxRdpDistanceProperty);
+            MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(maxCADistanceProperty);
 
-            var maxRdpDistanceSlider = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlSlider, IMyRemoteControl>("PathfinderMaxRdpDistanceFromDestinationSlider");
-            maxRdpDistanceSlider.Title = MyStringId.GetOrCompute("Max RDP Dist From Dest");
-            maxRdpDistanceSlider.Tooltip = MyStringId.GetOrCompute("Outer radius to search for a reachable destination during dynamic path refinement");
-            maxRdpDistanceSlider.SupportsMultipleBlocks = true;
-            maxRdpDistanceSlider.Visible = (rcBlock) => true;
-            maxRdpDistanceSlider.Enabled = (rcBlock) => true;
-            maxRdpDistanceSlider.SetLimits(0f, 10000f);
-            maxRdpDistanceSlider.Getter = (rcBlock) =>
+            var maxCADistanceSlider = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlSlider, IMyRemoteControl>("PathfinderMaxCADistanceFromDestinationSlider");
+            maxCADistanceSlider.Title = MyStringId.GetOrCompute("Max CA Dist From Dest");
+            maxCADistanceSlider.Tooltip = MyStringId.GetOrCompute("Outer radius to search for a reachable destination during collision avoidance");
+            maxCADistanceSlider.SupportsMultipleBlocks = true;
+            maxCADistanceSlider.Visible = (rcBlock) => true;
+            maxCADistanceSlider.Enabled = (rcBlock) => true;
+            maxCADistanceSlider.SetLimits(0f, 10000f);
+            maxCADistanceSlider.Getter = (rcBlock) =>
             {
                 string error;
                 var nav = GetNavigationComponent(rcBlock, out error);
-                return nav != null ? (float)nav.MaxRdpDistanceFromDestination : 50f;
+                return nav != null ? (float)nav.MaxCADistanceFromDestination : 50f;
             };
-            maxRdpDistanceSlider.Setter = (rcBlock, value) =>
+            maxCADistanceSlider.Setter = (rcBlock, value) =>
             {
                 string error;
                 var nav = GetNavigationComponent(rcBlock, out error);
                 if (nav != null)
                 {
-                    nav.MaxRdpDistanceFromDestination = value;
+                    nav.MaxCADistanceFromDestination = value;
                 }
             };
-            maxRdpDistanceSlider.Writer = (rcBlock, builder) =>
+            maxCADistanceSlider.Writer = (rcBlock, builder) =>
             {
                 string error;
                 var nav = GetNavigationComponent(rcBlock, out error);
-                var distance = nav != null ? nav.MaxRdpDistanceFromDestination : 50.0;
+                var distance = nav != null ? nav.MaxCADistanceFromDestination : 50.0;
                 builder.AppendFormat(CultureInfo.InvariantCulture, "{0:N1} m", distance);
             };
-            MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(maxRdpDistanceSlider);
+            MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(maxCADistanceSlider);
 
-            // Enable Dynamic Path Refinement property (visible)
-            var enableDynamicPathRefinementProperty = MyAPIGateway.TerminalControls.CreateProperty<bool, IMyRemoteControl>("PathfinderEnableDynamicPathRefinement");
-            enableDynamicPathRefinementProperty.SupportsMultipleBlocks = true;
-            enableDynamicPathRefinementProperty.Visible = (rcBlock) => true;
-            enableDynamicPathRefinementProperty.Enabled = (rcBlock) => true;
-            enableDynamicPathRefinementProperty.Getter = (rcBlock) =>
+            // Enable Pathfinding property (visible)
+            var enablePathfindingProperty = MyAPIGateway.TerminalControls.CreateProperty<bool, IMyRemoteControl>("PathfinderEnablePathfinding");
+            enablePathfindingProperty.SupportsMultipleBlocks = true;
+            enablePathfindingProperty.Visible = (rcBlock) => true;
+            enablePathfindingProperty.Enabled = (rcBlock) => true;
+            enablePathfindingProperty.Getter = (rcBlock) =>
             {
                 string error;
                 var nav = GetNavigationComponent(rcBlock, out error);
-                return nav != null ? nav.EnableDynamicPathRefinement : true;
+                return nav != null ? nav.EnablePathfinding : true;
             };
-            enableDynamicPathRefinementProperty.Setter = (rcBlock, value) =>
+            enablePathfindingProperty.Setter = (rcBlock, value) =>
             {
                 string error;
                 var nav = GetNavigationComponent(rcBlock, out error);
                 if (nav != null)
                 {
-                    nav.EnableDynamicPathRefinement = value;
+                    nav.EnablePathfinding = value;
                 }
             };
-            MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(enableDynamicPathRefinementProperty);
+            MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(enablePathfindingProperty);
 
-            var enableDynamicPathRefinementCheckbox = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlCheckbox, IMyRemoteControl>("PathfinderEnableDynamicPathRefinementCheckbox");
-            enableDynamicPathRefinementCheckbox.Title = MyStringId.GetOrCompute("Enable Dynamic Path Refinement");
-            enableDynamicPathRefinementCheckbox.Tooltip = MyStringId.GetOrCompute("If enabled, uses dynamic obstacle avoidance. If disabled, DPR path goes directly to next master path waypoint.");
-            enableDynamicPathRefinementCheckbox.SupportsMultipleBlocks = true;
-            enableDynamicPathRefinementCheckbox.Visible = (rcBlock) => true;
-            enableDynamicPathRefinementCheckbox.Enabled = (rcBlock) => true;
-            enableDynamicPathRefinementCheckbox.Getter = (rcBlock) =>
+            var enablePathfindingCheckbox = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlCheckbox, IMyRemoteControl>("PathfinderEnablePathfindingCheckbox");
+            enablePathfindingCheckbox.Title = MyStringId.GetOrCompute("Pathfinding");
+            enablePathfindingCheckbox.Tooltip = MyStringId.GetOrCompute("If enabled, uses A* pathfinding to find paths around obstacles. If disabled, creates a direct path from current position to destination.");
+            enablePathfindingCheckbox.SupportsMultipleBlocks = true;
+            enablePathfindingCheckbox.Visible = (rcBlock) => true;
+            enablePathfindingCheckbox.Enabled = (rcBlock) => true;
+            enablePathfindingCheckbox.Getter = (rcBlock) =>
             {
                 string error;
                 var nav = GetNavigationComponent(rcBlock, out error);
-                return nav != null ? nav.EnableDynamicPathRefinement : true;
+                return nav != null ? nav.EnablePathfinding : true;
             };
-            enableDynamicPathRefinementCheckbox.Setter = (rcBlock, value) =>
+            enablePathfindingCheckbox.Setter = (rcBlock, value) =>
             {
                 string error;
                 var nav = GetNavigationComponent(rcBlock, out error);
                 if (nav != null)
                 {
-                    nav.EnableDynamicPathRefinement = value;
+                    nav.EnablePathfinding = value;
                 }
             };
-            MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(enableDynamicPathRefinementCheckbox);
+            MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(enablePathfindingCheckbox);
+
+            // Enable Collision Avoidance property (visible)
+            var enableCollisionAvoidanceProperty = MyAPIGateway.TerminalControls.CreateProperty<bool, IMyRemoteControl>("PathfinderEnableCollisionAvoidance");
+            enableCollisionAvoidanceProperty.SupportsMultipleBlocks = true;
+            enableCollisionAvoidanceProperty.Visible = (rcBlock) => true;
+            enableCollisionAvoidanceProperty.Enabled = (rcBlock) => true;
+            enableCollisionAvoidanceProperty.Getter = (rcBlock) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                return nav != null ? nav.EnableCollisionAvoidance : false;
+            };
+            enableCollisionAvoidanceProperty.Setter = (rcBlock, value) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                if (nav != null)
+                {
+                    nav.EnableCollisionAvoidance = value;
+                }
+            };
+            MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(enableCollisionAvoidanceProperty);
+
+            var enableCollisionAvoidanceCheckbox = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlCheckbox, IMyRemoteControl>("PathfinderEnableCollisionAvoidanceCheckbox");
+            enableCollisionAvoidanceCheckbox.Title = MyStringId.GetOrCompute("Collision Avoidance");
+            enableCollisionAvoidanceCheckbox.Tooltip = MyStringId.GetOrCompute("If enabled, uses expanding circle pattern to find collision-free paths around obstacles.");
+            enableCollisionAvoidanceCheckbox.SupportsMultipleBlocks = true;
+            enableCollisionAvoidanceCheckbox.Visible = (rcBlock) => true;
+            enableCollisionAvoidanceCheckbox.Enabled = (rcBlock) => true;
+            enableCollisionAvoidanceCheckbox.Getter = (rcBlock) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                return nav != null ? nav.EnableCollisionAvoidance : false;
+            };
+            enableCollisionAvoidanceCheckbox.Setter = (rcBlock, value) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                if (nav != null)
+                {
+                    nav.EnableCollisionAvoidance = value;
+                }
+            };
+            MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(enableCollisionAvoidanceCheckbox);
+
+            // Is On Base Approach property (hidden)
+            var isOnBaseApproachProperty = MyAPIGateway.TerminalControls.CreateProperty<bool, IMyRemoteControl>("PathfinderIsOnBaseApproach");
+            isOnBaseApproachProperty.SupportsMultipleBlocks = true;
+            isOnBaseApproachProperty.Visible = (rcBlock) => false;
+            isOnBaseApproachProperty.Enabled = (rcBlock) => true;
+            isOnBaseApproachProperty.Getter = (rcBlock) =>
+            {
+                string error;
+                var nav = GetNavigationComponent(rcBlock, out error);
+                return nav != null ? nav.IsOnBaseApproach : false;
+            };
+            isOnBaseApproachProperty.Setter = (rcBlock, value) => { };
+            MyAPIGateway.TerminalControls.AddControl<IMyRemoteControl>(isOnBaseApproachProperty);
 
             // Min Altitude property (visible)
             var minAltitudeProperty = MyAPIGateway.TerminalControls.CreateProperty<double, IMyRemoteControl>("PathfinderMinAltitude");
@@ -674,7 +739,7 @@ namespace Pathfinder
 
         private void ResetSettings(IMyTerminalBlock rc)
         {
-            OctreeAStarSettings.Instance.ResetToDefaults();
+            PathfinderSettings.Instance.ResetToDefaults();
             Utils.ShowHudMessage("Pathfinder settings reset to defaults");
         }
 

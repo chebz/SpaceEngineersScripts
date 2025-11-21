@@ -26,11 +26,11 @@ namespace Pathfinder
     {
         private const double DEFAULT_MIN_ALTITUDE = 100.0;
         private const double DEFAULT_MAX_ALTITUDE = 0.0;
-        private const double DEFAULT_DESTINATION_TOLERANCE = 50.0;
         private const double DEFAULT_MIN_DISTANCE_FROM_DESTINATION = 0.0;
         private const double DEFAULT_MAX_DISTANCE_FROM_DESTINATION = 50.0;
-        private const double DEFAULT_MAX_RDP_DISTANCE_FROM_DESTINATION = 50.0;
-        private const bool DEFAULT_ENABLE_DYNAMIC_PATH_REFINEMENT = true;
+        private const double DEFAULT_MAX_CA_DISTANCE_FROM_DESTINATION = 50.0;
+        private const bool DEFAULT_ENABLE_COLLISION_AVOIDANCE = false;
+        private const bool DEFAULT_ENABLE_PATHFINDING = true;
 
         private bool _initialized = false;
         private Sandbox.ModAPI.IMyRemoteControl _remoteControl;
@@ -42,29 +42,29 @@ namespace Pathfinder
         private static readonly Guid MIN_ALTITUDE_STORAGE_ID = new Guid("79df6c4d-962b-438f-b7b3-eca6c479d67d");
         private static readonly Guid MAX_ALTITUDE_STORAGE_ID = new Guid("3a75e1a9-bdc9-4a07-b5f1-9b9b6c1b0ed8");
         private static readonly Guid DESTINATION_NAME_STORAGE_ID = new Guid("4d9c3b27-4120-4b7a-86d9-6fb5c9cf9bf3");
-        private static readonly Guid DESTINATION_TOLERANCE_STORAGE_ID = new Guid("f4e8f9c5-0e96-49aa-8f5d-4db4c0d0f8d4");
         private static readonly Guid MIN_DISTANCE_FROM_DESTINATION_STORAGE_ID = new Guid("1f1397f9-910a-4a4a-95da-63d74f7a3fd2");
         private static readonly Guid MAX_DISTANCE_FROM_DESTINATION_STORAGE_ID = new Guid("31cbad8e-6adb-4471-9f4a-67583515a69c");
-        private static readonly Guid MAX_RDP_DISTANCE_FROM_DESTINATION_STORAGE_ID = new Guid("a2b3c4d5-e6f7-8901-2345-6789abcdef01");
-        private static readonly Guid ENABLE_DYNAMIC_PATH_REFINEMENT_STORAGE_ID = new Guid("b3c4d5e6-f7a8-9012-3456-789abcdef012");
+        private static readonly Guid MAX_CA_DISTANCE_FROM_DESTINATION_STORAGE_ID = new Guid("a2b3c4d5-e6f7-8901-2345-6789abcdef01");
+        private static readonly Guid ENABLE_COLLISION_AVOIDANCE_STORAGE_ID = new Guid("b3c4d5e6-f7a8-9012-3456-789abcdef012");
+        private static readonly Guid ENABLE_PATHFINDING_STORAGE_ID = new Guid("c4d5e6f7-a8b9-0123-4567-89abcdef0123");
+        private static readonly Guid DESTINATION_OFFSET_STORAGE_ID = new Guid("d5e6f7a8-b9c0-1234-5678-9abcdef01234");
         private Vector3D? _destination = null;
         private string _destinationName = string.Empty;
-        private Vector3D? _destinationNamePosition;
-        private double _destinationTolerance = DEFAULT_DESTINATION_TOLERANCE;
         private double _minDistanceFromDestination = DEFAULT_MIN_DISTANCE_FROM_DESTINATION;
         private double _maxDistanceFromDestination = DEFAULT_MAX_DISTANCE_FROM_DESTINATION;
-        private double _maxRdpDistanceFromDestination = DEFAULT_MAX_RDP_DISTANCE_FROM_DESTINATION;
-        private bool _enableDynamicPathRefinement = DEFAULT_ENABLE_DYNAMIC_PATH_REFINEMENT;
+        private double _maxCADistanceFromDestination = DEFAULT_MAX_CA_DISTANCE_FROM_DESTINATION;
+        private bool _enableCollisionAvoidance = DEFAULT_ENABLE_COLLISION_AVOIDANCE;
+        private bool _enablePathfinding = DEFAULT_ENABLE_PATHFINDING;
         private bool _suppressSave;
         private Vector3D? _lastStartPosition;
         private const double POSITION_EPSILON = 0.1;
         private double _minAltitude = DEFAULT_MIN_ALTITUDE;
         private double _maxAltitude = DEFAULT_MAX_ALTITUDE;
-        private readonly DynamicPathRefinement _dynamicPathRefinement = new DynamicPathRefinement();
+        private readonly CollisionAvoidance _collisionAvoidance = new CollisionAvoidance();
+        private Vector3D? _caTarget = null;
         private int _currentWaypointIndex = -1;
-        private Vector3D _testRaycastStart;
-        private Vector3D _testRaycastEnd;
-        private MyOrientedBoundingBoxD _testOOB;
+        private IMyCubeBlock _cachedTargetEntity = null;
+        private Vector3D _destinationOffset = Vector3D.Zero;
 
         public bool NeedsRecompute
         {
@@ -74,16 +74,24 @@ namespace Pathfinder
         
         public Vector3D? Destination
         {
-            get { return _destination; }
-            set { SetDestinationInternal(value, _destinationTolerance, true); }
+            get 
+            { 
+                if (TargetMatrix != null)
+                {
+                    return TargetMatrix.Value.Translation + Vector3D.TransformNormal(_destinationOffset, TargetMatrix.Value);
+                }
+                return _destination; 
+            }
+            set 
+            { 
+                SetDestination(value); 
+            }
         }
 
-        public string DestinationName => _destinationName;
-
-        public double DestinationTolerance
+        public string DestinationName 
         {
-            get { return _destinationTolerance; }
-            set { SetDestinationTolerance(value, false); }
+            get { return _destinationName; }
+            set { SetDestinationName(value, false); }
         }
 
         public double MinDistanceFromDestination
@@ -98,16 +106,79 @@ namespace Pathfinder
             set { SetMaxDistanceFromDestination(value, false); }
         }
 
-        public double MaxRdpDistanceFromDestination
+        public double MaxCADistanceFromDestination
         {
-            get { return _maxRdpDistanceFromDestination; }
-            set { SetMaxRdpDistanceFromDestination(value, false); }
+            get { return _maxCADistanceFromDestination; }
+            set { SetMaxCADistanceFromDestination(value, false); }
         }
 
-        public bool EnableDynamicPathRefinement
+        public bool EnablePathfinding
         {
-            get { return _enableDynamicPathRefinement; }
-            set { SetEnableDynamicPathRefinement(value, false); }
+            get { return _enablePathfinding; }
+            set { SetEnablePathfinding(value, false); }
+        }
+
+        public bool EnableCollisionAvoidance
+        {
+            get { return _enableCollisionAvoidance; }
+            set { SetEnableCollisionAvoidance(value, false); }
+        }
+
+        public Vector3D? CATarget
+        {
+            get { return _caTarget; }
+            set { _caTarget = value; }
+        }
+
+        public bool IsOnBaseApproach
+        {
+            get 
+            { 
+                var isOnBaseApproach = _enableCollisionAvoidance && _collisionAvoidance != null && _collisionAvoidance.IsOnBaseApproach; 
+                return isOnBaseApproach;
+            }
+        }
+
+        public Vector3D? TargetVelocity
+        {
+            get 
+            {
+                var remoteControl = _cachedTargetEntity as Sandbox.ModAPI.IMyRemoteControl;
+                if (remoteControl != null)
+                {
+                    var linearVelocity = remoteControl.GetShipVelocities().LinearVelocity;
+                    return linearVelocity;
+                }
+                return null;
+             }
+        }
+
+        public MatrixD? TargetMatrix
+        {
+            get 
+            {
+                if (_cachedTargetEntity == null)
+                {
+                    return null;
+                }
+                return _cachedTargetEntity.WorldMatrix;
+             }
+        }
+
+        public Vector3D DestinationOffset
+        {
+            get { return _destinationOffset; }
+            set
+            {
+                if (_destinationOffset != value)
+                {
+                    _destinationOffset = value;
+                    if (!string.IsNullOrEmpty(_destinationName))
+                    {
+                        _needsRecompute = true;
+                    }
+                }
+            }
         }
 
         public void SetDestinationNameFromTerminal(string name)
@@ -155,9 +226,19 @@ namespace Pathfinder
 
         public Sandbox.ModAPI.IMyRemoteControl RemoteControl => _remoteControl;
 
-        public int CurrentWaypointIndex => _currentWaypointIndex;
+        public double AgentSize
+        {
+            get
+            {
+                if (_remoteControl?.CubeGrid != null)
+                {
+                    return _remoteControl.CubeGrid.WorldVolume.Radius * 2.0;
+                }
+                return 0.0;
+            }
+        }
 
-        public string RefinedPathString => _dynamicPathRefinement.RefinedPathString;
+        public int CurrentWaypointIndex => _currentWaypointIndex;
         
         // for debugging
         public void Step()
@@ -170,7 +251,13 @@ namespace Pathfinder
 
         public override void Init(MyObjectBuilder_EntityBase objectBuilder)
         {
-            NeedsUpdate = MyEntityUpdateEnum.EACH_FRAME | MyEntityUpdateEnum.EACH_100TH_FRAME;
+            NeedsUpdate = MyEntityUpdateEnum.EACH_FRAME | MyEntityUpdateEnum.EACH_100TH_FRAME | MyEntityUpdateEnum.EACH_10TH_FRAME;
+        }
+
+        public override void Close()
+        {
+            _collisionAvoidance.Clear();
+            base.Close();
         }
 
         public override void UpdateBeforeSimulation()
@@ -197,24 +284,56 @@ namespace Pathfinder
 
             FindPath();
             _graph.Render();
-            _dynamicPathRefinement.Update(this);
-            // if (_remoteControl.CubeGrid.CustomName == "Medium Miner")
-            // {
-            //     _testRaycastStart = _remoteControl.CubeGrid.WorldAABB.Center;
-            //     _testRaycastEnd = _testRaycastStart + _remoteControl.WorldMatrix.GetOrientation().Forward * 200;
-            //     Utils.DrawOBB(_testOOB, Color.Green, true);
-            // }
+            if (_enableCollisionAvoidance)
+            {
+                _collisionAvoidance.Update(this);
+                _collisionAvoidance.Render(this);
+            }
+        }
+
+        public override void UpdateBeforeSimulation10()
+        {
+            UpdateCATarget();
         }
 
         public override void UpdateBeforeSimulation100()
         {
-            OctreeAStarSettings.Instance.Update();
+            PathfinderSettings.Instance.Update();
+            //UpdateCATarget();
+        }
 
-            UpdateDestinationFromName();
-            
-            _dynamicPathRefinement.RefinePath(this);
-            //TestRaycast();
-            // TestOOBCast();
+        private void UpdateCATarget()
+        {
+            if (_enableCollisionAvoidance)
+            {
+                _collisionAvoidance.RefinePath(this);
+            }
+            else
+            {
+                // When collision avoidance is disabled, set CA target to current waypoint to keep navigation working
+                if (_graph != null && _graph.Path != null && _graph.Path.state == Path.State.Ready)
+                {
+                    var points = _graph.Path.points;
+                    if (points != null && points.Count > 0 && _currentWaypointIndex > 0 && _currentWaypointIndex < points.Count)
+                    {
+                        // Set CA target to the current waypoint
+                        _caTarget = points[_currentWaypointIndex];
+                    }
+                    else if (points != null && points.Count > 0 && _currentWaypointIndex >= points.Count)
+                    {
+                        // Reached the end, use the last waypoint
+                        _caTarget = points[points.Count - 1];
+                    }
+                    else
+                    {
+                        _caTarget = null;
+                    }
+                }
+                else
+                {
+                    _caTarget = null;
+                }
+            }
         }
 
         private void OnPathStateChanged(Path.State state)
@@ -225,42 +344,51 @@ namespace Pathfinder
             }
             else if (state == Path.State.NoPath)
             {
-                _dynamicPathRefinement.Clear();
+                _collisionAvoidance.Clear();
                 _currentWaypointIndex = -1;
             }
         }
 
         private void FindPath()
         {
-            if (_destination == null) 
+            if (Destination == null) 
             {
                 ClearPath();
                 return;
             }
 
-            var destination = _destination.Value;
             var start = _remoteControl.CubeGrid.WorldAABB.Center;
+            var end = Destination.Value;
             _graphReset = false;
 
             if (_needsRecompute)
             {
                 _needsRecompute = false;
-                var parameters = new PathfindingParameters
+
+                if (!_enablePathfinding)
                 {
-                    RemoteControl = _remoteControl,
-                    Start = start,
-                    End = destination,
-                    MinAltitude = MinAltitude,
-                    MaxAltitude = MaxAltitude,
-                    MinDistanceFromDestination = MinDistanceFromDestination,
-                    MaxDistanceFromDestination = MaxDistanceFromDestination,
-                    EnableDynamicPathRefinement = false,
-                    DynamicObstacles = null
-                };
-                _graph.BeginFindPath(parameters);
-                _pathStartTime = DateTime.Now;
-                _lastStartPosition = start;
-                Utils.ShowHudMessage($"Starting pathfinding to GPS '{_destination.Value}'");
+                    _graph.SetSimplePath(start, end);
+                }
+                else
+                {
+                    var parameters = new PathfindingParameters
+                    {
+                        RemoteControl = _remoteControl,
+                        Start = start,
+                        End = end,
+                        MinAltitude = MinAltitude,
+                        MaxAltitude = MaxAltitude,
+                        MinDistanceFromDestination = MinDistanceFromDestination,
+                        MaxDistanceFromDestination = MaxDistanceFromDestination,
+                        EnableDynamicPathRefinement = false,
+                        DynamicObstacles = null,
+                        AgentSize = AgentSize
+                    };
+                    _graph.BeginFindPath(parameters);
+                    _pathStartTime = DateTime.Now;
+                    _lastStartPosition = start;
+                    Utils.ShowHudMessage($"Starting pathfinding to GPS '{end}'");
+                }
             }
 
             if (_graph.Path == null || _graph.Path.state != Path.State.Calculating)
@@ -288,7 +416,7 @@ namespace Pathfinder
             }
             _graphReset = true;
             _needsRecompute = false;
-            _dynamicPathRefinement.Clear();
+            _collisionAvoidance.Clear();
             _graph.Reset();
             _graphReset = true;
         }
@@ -358,22 +486,6 @@ namespace Pathfinder
             {
                 SetDestinationName(value, true);
             }
-            if (storage.TryGetValue(DESTINATION_TOLERANCE_STORAGE_ID, out value))
-            {
-                double tolerance;
-                if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out tolerance))
-                {
-                    SetDestinationTolerance(tolerance, true);
-                }
-                else
-                {
-                    SetDestinationTolerance(DEFAULT_DESTINATION_TOLERANCE, true);
-                }
-            }
-            else
-            {
-                SetDestinationTolerance(DEFAULT_DESTINATION_TOLERANCE, true);
-            }
         if (storage.TryGetValue(MIN_DISTANCE_FROM_DESTINATION_STORAGE_ID, out value))
         {
             double distance;
@@ -406,37 +518,76 @@ namespace Pathfinder
         {
             SetMaxDistanceFromDestination(DEFAULT_MAX_DISTANCE_FROM_DESTINATION, true);
         }
-        if (storage.TryGetValue(MAX_RDP_DISTANCE_FROM_DESTINATION_STORAGE_ID, out value))
+        if (storage.TryGetValue(MAX_CA_DISTANCE_FROM_DESTINATION_STORAGE_ID, out value))
         {
             double distance;
             if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out distance))
             {
-                SetMaxRdpDistanceFromDestination(distance, true);
+                SetMaxCADistanceFromDestination(distance, true);
             }
             else
             {
-                SetMaxRdpDistanceFromDestination(DEFAULT_MAX_RDP_DISTANCE_FROM_DESTINATION, true);
+                SetMaxCADistanceFromDestination(DEFAULT_MAX_CA_DISTANCE_FROM_DESTINATION, true);
             }
         }
         else
         {
-            SetMaxRdpDistanceFromDestination(DEFAULT_MAX_RDP_DISTANCE_FROM_DESTINATION, true);
+            SetMaxCADistanceFromDestination(DEFAULT_MAX_CA_DISTANCE_FROM_DESTINATION, true);
         }
-        if (storage.TryGetValue(ENABLE_DYNAMIC_PATH_REFINEMENT_STORAGE_ID, out value))
+        if (storage.TryGetValue(ENABLE_COLLISION_AVOIDANCE_STORAGE_ID, out value))
         {
             bool enable;
             if (bool.TryParse(value, out enable))
             {
-                SetEnableDynamicPathRefinement(enable, true);
+                SetEnableCollisionAvoidance(enable, true);
             }
             else
             {
-                SetEnableDynamicPathRefinement(DEFAULT_ENABLE_DYNAMIC_PATH_REFINEMENT, true);
+                SetEnableCollisionAvoidance(DEFAULT_ENABLE_COLLISION_AVOIDANCE, true);
             }
         }
         else
         {
-            SetEnableDynamicPathRefinement(DEFAULT_ENABLE_DYNAMIC_PATH_REFINEMENT, true);
+            SetEnableCollisionAvoidance(DEFAULT_ENABLE_COLLISION_AVOIDANCE, true);
+        }
+        if (storage.TryGetValue(ENABLE_PATHFINDING_STORAGE_ID, out value))
+        {
+            bool enable;
+            if (bool.TryParse(value, out enable))
+            {
+                SetEnablePathfinding(enable, true);
+            }
+            else
+            {
+                SetEnablePathfinding(DEFAULT_ENABLE_PATHFINDING, true);
+            }
+        }
+        else
+        {
+            SetEnablePathfinding(DEFAULT_ENABLE_PATHFINDING, true);
+        }
+        if (storage.TryGetValue(DESTINATION_OFFSET_STORAGE_ID, out value))
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                WithSaveSuppressed(() => _destinationOffset = Vector3D.Zero);
+            }
+            else
+            {
+                var offset = Utils.ParseCoordsFromString(value);
+                if (offset.HasValue)
+                {
+                    WithSaveSuppressed(() => _destinationOffset = offset.Value);
+                }
+                else
+                {
+                    WithSaveSuppressed(() => _destinationOffset = Vector3D.Zero);
+                }
+            }
+        }
+        else
+        {
+            WithSaveSuppressed(() => _destinationOffset = Vector3D.Zero);
         }
             return true;
         }
@@ -458,11 +609,13 @@ namespace Pathfinder
             var maxAltitudeString = MaxAltitude.ToString(CultureInfo.InvariantCulture);
             _remoteControl.Storage.SetValue(MAX_ALTITUDE_STORAGE_ID, maxAltitudeString);
             _remoteControl.Storage.SetValue(DESTINATION_NAME_STORAGE_ID, _destinationName ?? string.Empty);
-            _remoteControl.Storage.SetValue(DESTINATION_TOLERANCE_STORAGE_ID, _destinationTolerance.ToString(CultureInfo.InvariantCulture));
             _remoteControl.Storage.SetValue(MIN_DISTANCE_FROM_DESTINATION_STORAGE_ID, _minDistanceFromDestination.ToString(CultureInfo.InvariantCulture));
             _remoteControl.Storage.SetValue(MAX_DISTANCE_FROM_DESTINATION_STORAGE_ID, _maxDistanceFromDestination.ToString(CultureInfo.InvariantCulture));
-            _remoteControl.Storage.SetValue(MAX_RDP_DISTANCE_FROM_DESTINATION_STORAGE_ID, _maxRdpDistanceFromDestination.ToString(CultureInfo.InvariantCulture));
-            _remoteControl.Storage.SetValue(ENABLE_DYNAMIC_PATH_REFINEMENT_STORAGE_ID, _enableDynamicPathRefinement.ToString());
+            _remoteControl.Storage.SetValue(MAX_CA_DISTANCE_FROM_DESTINATION_STORAGE_ID, _maxCADistanceFromDestination.ToString(CultureInfo.InvariantCulture));
+            _remoteControl.Storage.SetValue(ENABLE_COLLISION_AVOIDANCE_STORAGE_ID, _enableCollisionAvoidance.ToString());
+            _remoteControl.Storage.SetValue(ENABLE_PATHFINDING_STORAGE_ID, _enablePathfinding.ToString());
+            var offsetString = Utils.GetStringFromCoords((Vector3D?)_destinationOffset);
+            _remoteControl.Storage.SetValue(DESTINATION_OFFSET_STORAGE_ID, offsetString);
         }
 
         private void WithSaveSuppressed(Action action)
@@ -483,7 +636,7 @@ namespace Pathfinder
             }
         }
 
-        private bool HasDroneMoved(double tolerance)
+        private bool HasMoved(double tolerance)
         {
             if (!_lastStartPosition.HasValue || _remoteControl == null)
             {
@@ -495,99 +648,36 @@ namespace Pathfinder
             return Vector3D.DistanceSquared(currentPosition, _lastStartPosition.Value) > toleranceSquared;
         }
 
-        private void SetDestinationInternal(Vector3D? newDestination, double tolerance, bool updateNameFromCoordinates)
+        private void SetDestination(Vector3D? newDestination)
         {
-            var destinationChanged = !AreClose(_destination, newDestination, tolerance);
-            _destination = newDestination;
+            DestinationName = string.Empty;
 
-            if (updateNameFromCoordinates)
-            {
-                UpdateDestinationNameFromCoordinates();
-            }
-            else
-            {
-                if (_destination.HasValue)
-                {
-                    _destinationNamePosition = _destination;
-                }
-                else
-                {
-                    _destinationNamePosition = null;
-                }
-            }
-
-            bool droneMoved = HasDroneMoved(POSITION_EPSILON);
-
-            if (destinationChanged || droneMoved)
-            {
-                _needsRecompute = true;
-                if (destinationChanged)
-                {
-                    Save();
-                }
-            }
-        }
-
-        private void SetDestinationForced(Vector3D? value)
-        {
-            SetDestinationInternal(value, _destinationTolerance, false);
-        }
-
-        private void SetDestinationName(string name, bool fromStorage)
-        {
-            var originalDestination = _destination;
-            var newName = string.IsNullOrWhiteSpace(name) ? string.Empty : name.Trim();
-            var changed = !string.Equals(_destinationName, newName, StringComparison.OrdinalIgnoreCase);
-            _destinationName = newName;
-
-            Action apply = () =>
-            {
-                if (string.IsNullOrWhiteSpace(_destinationName))
-                {
-                    _destinationNamePosition = null;
-                }
-                else
-                {
-                    _destinationNamePosition = null;
-                    UpdateDestinationFromName(true);
-                }
-            };
-
-            if (fromStorage)
-            {
-                WithSaveSuppressed(apply);
-            }
-            else
-            {
-                apply();
-            }
-
-            if (changed && !fromStorage)
-            {
-                if (AreClose(originalDestination, _destination, POSITION_EPSILON))
-                {
-                    Save();
-                }
-            }
-        }
-
-        private void SetDestinationTolerance(double value, bool fromStorage)
-        {
-            var sanitized = Math.Max(0.0, value);
-            if (Math.Abs(sanitized - _destinationTolerance) < 0.01)
+            if (AreClose(_destination, newDestination))
             {
                 return;
             }
 
-            Action apply = () => _destinationTolerance = sanitized;
+            _destination = newDestination;
 
-            if (fromStorage)
+            bool hasMoved = HasMoved(POSITION_EPSILON);
+
+            if (hasMoved)
             {
-                WithSaveSuppressed(apply);
+                _needsRecompute = true;
+                Save();
             }
-            else
+        }
+
+        private void SetDestinationName(string name, bool fromStorage)
+        {
+            var newName = string.IsNullOrWhiteSpace(name) ? string.Empty : name.Trim();
+            var changed = !string.Equals(_destinationName, newName, StringComparison.OrdinalIgnoreCase);
+            _destinationName = newName;
+
+            UpdateDestinationFromName();
+
+            if (changed && !fromStorage)
             {
-                apply();
                 Save();
             }
         }
@@ -652,17 +742,17 @@ namespace Pathfinder
             }
         }
 
-        private void SetMaxRdpDistanceFromDestination(double value, bool fromStorage)
+        private void SetMaxCADistanceFromDestination(double value, bool fromStorage)
         {
             var sanitized = Math.Max(0.0, value);
-            if (Math.Abs(sanitized - _maxRdpDistanceFromDestination) < 0.01)
+            if (Math.Abs(sanitized - _maxCADistanceFromDestination) < 0.01)
             {
                 return;
             }
 
             Action apply = () =>
             {
-                _maxRdpDistanceFromDestination = sanitized;
+                _maxCADistanceFromDestination = sanitized;
             };
 
             if (fromStorage)
@@ -676,16 +766,17 @@ namespace Pathfinder
             }
         }
 
-        private void SetEnableDynamicPathRefinement(bool value, bool fromStorage)
+        private void SetEnablePathfinding(bool value, bool fromStorage)
         {
-            if (value == _enableDynamicPathRefinement)
+            if (value == _enablePathfinding)
             {
                 return;
             }
 
             Action apply = () =>
             {
-                _enableDynamicPathRefinement = value;
+                _enablePathfinding = value;
+                _needsRecompute = true;
             };
 
             if (fromStorage)
@@ -699,15 +790,58 @@ namespace Pathfinder
             }
         }
 
-        private void UpdateDestinationFromName(bool force = false)
+        private void SetEnableCollisionAvoidance(bool value, bool fromStorage)
         {
+            if (value == _enableCollisionAvoidance)
+            {
+                return;
+            }
+
+            Action apply = () =>
+            {
+                _enableCollisionAvoidance = value;
+                if (!value)
+                {
+                    _collisionAvoidance.Clear();
+                }
+            };
+
+            if (fromStorage)
+            {
+                WithSaveSuppressed(apply);
+            }
+            else
+            {
+                apply();
+                Save();
+            }
+        }
+
+        private void UpdateDestinationFromName()
+        {
+            _cachedTargetEntity = null;
             if (string.IsNullOrWhiteSpace(_destinationName))
             {
                 return;
             }
+            if (FindTargetEntity())
+            {
+                return;
+            }
+            var gps = FindGpsByName(_destinationName);
+            if (gps != null)
+            {
+                _destination = gps.Coords;
+                return;
+            }
+            _destination = null;
+        }
 
+
+        private IMyGps FindGpsByName(string name)
+        {
             var gpsList = Utils.GetGpsList();
-            var match = gpsList.FirstOrDefault(g =>
+            return gpsList.FirstOrDefault(g =>
             {
                 if (g == null || string.IsNullOrWhiteSpace(g.Name))
                 {
@@ -715,7 +849,7 @@ namespace Pathfinder
                 }
 
                 var gpsName = g.Name;
-                if (string.Equals(gpsName, _destinationName, StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(gpsName, name, StringComparison.OrdinalIgnoreCase))
                 {
                     return true;
                 }
@@ -725,67 +859,69 @@ namespace Pathfinder
                 if (separatorIndex >= 0)
                 {
                     var nameBeforeSeparator = gpsName.Substring(0, separatorIndex);
-                    if (string.Equals(nameBeforeSeparator, _destinationName, StringComparison.OrdinalIgnoreCase))
+                    if (string.Equals(nameBeforeSeparator, name, StringComparison.OrdinalIgnoreCase))
                     {
                         return true;
                     }
                 }
 
-                if (gpsName.StartsWith(_destinationName + separator, StringComparison.OrdinalIgnoreCase))
+                return gpsName.StartsWith(name + separator, StringComparison.OrdinalIgnoreCase);
+            });
+        }
+
+        private bool FindTargetEntity()
+        {
+            _cachedTargetEntity = null;
+
+            if (string.IsNullOrWhiteSpace(_destinationName))
+            {
+                return false;
+            }
+
+            var entityList = new HashSet<IMyEntity>();
+            MyAPIGateway.Entities.GetEntities(entityList, entity =>
+            {
+                if (entity == null || entity.MarkedForClose || entity.Closed)
                 {
+                    return false;
+                }
+
+                var grid = entity as IMyCubeGrid;
+                if (grid == null)
+                {
+                    return false;
+                }
+                if (!string.Equals(grid.DisplayName, _destinationName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+
+                // find beacon on the grid
+                var slimBlocks = new List<IMySlimBlock>();
+                grid.GetBlocks(slimBlocks, block => block?.FatBlock as Sandbox.ModAPI.IMyBeacon != null);
+                if (slimBlocks.Count == 0)
+                {
+                    return false;
+                }
+
+                _cachedTargetEntity = slimBlocks.First().FatBlock;
+
+                // try to find remote control on the grid
+                slimBlocks.Clear();
+                grid.GetBlocks(slimBlocks, block => block?.FatBlock as Sandbox.ModAPI.IMyRemoteControl != null);
+                if (slimBlocks.Count > 0)
+                {
+                    _cachedTargetEntity = slimBlocks.First().FatBlock;
                     return true;
                 }
 
-                return false;
+                return true;
             });
 
-            if (match == null)
-            {
-                Utils.ShowHudMessage("No GPS found for destination name: " + _destinationName);
-                return;
-            }
-
-            var coords = match.Coords;
-            var coordsChanged = !_destinationNamePosition.HasValue || !AreClose(_destinationNamePosition, coords, _destinationTolerance);
-            if (coordsChanged || force)
-            {
-                _destinationNamePosition = coords;
-                SetDestinationForced(coords);
-            }
+            return _cachedTargetEntity != null;
         }
 
-        private void UpdateDestinationNameFromCoordinates()
-        {
-            if (!_destination.HasValue)
-            {
-                _destinationNamePosition = null;
-                if (!string.IsNullOrWhiteSpace(_destinationName))
-                {
-                    _destinationName = string.Empty;
-                }
-                return;
-            }
-
-            if (!string.IsNullOrWhiteSpace(_destinationName))
-            {
-                _destinationNamePosition = _destination;
-                return;
-            }
-
-            var gpsList = Utils.GetGpsList();
-            var match = gpsList.FirstOrDefault(g => g != null && Vector3D.DistanceSquared(g.Coords, _destination.Value) < 0.1);
-            if (match != null)
-            {
-                _destinationName = match.Name ?? string.Empty;
-                _destinationNamePosition = match.Coords;
-            }
-            else
-            {
-                _destinationNamePosition = _destination;
-            }
-        }
-
-        private static bool AreClose(Vector3D? a, Vector3D? b, double tolerance)
+        private static bool AreClose(Vector3D? a, Vector3D? b)
         {
             if (!a.HasValue && !b.HasValue)
             {
@@ -797,8 +933,7 @@ namespace Pathfinder
                 return false;
             }
 
-            var toleranceSquared = tolerance * tolerance;
-            return Vector3D.DistanceSquared(a.Value, b.Value) <= toleranceSquared;
+            return Vector3D.DistanceSquared(a.Value, b.Value) <= POSITION_EPSILON;
         }
 
         public string GetPathPointsString()
@@ -823,54 +958,5 @@ namespace Pathfinder
         {
             _currentWaypointIndex = index;
         }
-
-        public string GetRefinedPathString()
-        {
-            return _dynamicPathRefinement.RefinedPathString;
-        }
-
-        // private void TestRaycast()
-        // {
-        //     if (_remoteControl.CubeGrid.CustomName != "Medium Miner")
-        //     {
-        //         return;
-        //     }
-        //     var hits = new List<IHitInfo>();
-        //     MyAPIGateway.Physics.CastRay(_testRaycastStart, _testRaycastEnd, hits, OctreeAStarSettings.Instance.TestCollisionLayer);
-        //     foreach (var hit in hits)
-        //     {
-        //         Utils.ShowHudMessage(OctreeAStarSettings.Instance.TestCollisionLayer + ": " + hit.HitEntity.Name + " " + hit.HitEntity.DisplayName + " " + hit.HitEntity.GetFriendlyName() + " " + hit.HitEntity.GetType().Name);
-        //     }
-        // }
-
-        // private void TestOOBCast()
-        // {
-        //     if (_remoteControl.CubeGrid.CustomName != "Medium Miner")
-        //     {
-        //         return;
-        //     }
-        //     var center = _testRaycastStart + (_testRaycastEnd - _testRaycastStart) * 0.5;
-        //     var halfExtents = _remoteControl.CubeGrid.WorldAABB.Size * 0.5;
-        //     var dist = Vector3D.Distance(_testRaycastStart, _testRaycastEnd);
-        //     halfExtents.Z = dist * 0.5;
-        //     var bounds = new BoundingBoxD(-halfExtents, halfExtents);
-        //     _testOOB = new MyOrientedBoundingBoxD(bounds, _remoteControl.WorldMatrix);
-        //     var result = new List<VRage.Game.Entity.MyEntity>();
-        //     MyGamePruningStructure.GetAllEntitiesInOBB(ref _testOOB, result, MyEntityQueryType.Both);
-        //     foreach (var entity in result)
-        //     {
-        //         Utils.ShowHudMessage(entity.Name + " " + entity.DisplayName + " " + entity.GetFriendlyName() + " " + entity.GetType().Name);
-
-        //         var voxelMap = entity as MyVoxelBase;
-        //         if (voxelMap != null)
-        //         {
-        //             var vol = voxelMap.GetVoxelContentInBoundingBox_Fast(bounds, _remoteControl.WorldMatrix);
-        //             if (vol.Item2 > 0)
-        //             {
-        //                 Utils.ShowHudMessage("Voxel map found: "+ vol.Item1 + " " + vol.Item2);
-        //             }
-        //         }
-        //     }
-        // }
     }
 }

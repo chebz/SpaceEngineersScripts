@@ -94,6 +94,24 @@ namespace IngameScript
         }
     }
 
+    public class IntProperty : PropertyBase<int>
+    {
+        public IntProperty(string key, int value, bool showInCustomData = true, string comment = null)
+            : base(key, value, showInCustomData, comment)
+        {
+        }
+        
+        protected override int StringToValue(string valueString)
+        {
+            return int.Parse(valueString);
+        }
+
+        public override string ValueToString()
+        {
+            return Value.ToString();
+        }
+    }
+
     public class GPSProperty : PropertyBase<Vector3D>
     {
         private string _gpsName;

@@ -9,12 +9,12 @@ mkdir "C:\Users\mikha\AppData\Roaming\SpaceEngineers\Mods\Pathfinder\Data" 2>nul
 REM Copy C# files
 copy "Mods\Pathfinder\Data\Scripts\Pathfinder\NavigationComponent.cs" "C:\Users\mikha\AppData\Roaming\SpaceEngineers\Mods\Pathfinder\Data\Scripts\Pathfinder\NavigationComponent.cs" >nul
 copy "Mods\Pathfinder\Data\Scripts\Pathfinder\PathfinderSession.cs" "C:\Users\mikha\AppData\Roaming\SpaceEngineers\Mods\Pathfinder\Data\Scripts\Pathfinder\PathfinderSession.cs" >nul
+copy "Mods\Pathfinder\Data\Scripts\Pathfinder\CollisionAvoidance.cs" "C:\Users\mikha\AppData\Roaming\SpaceEngineers\Mods\Pathfinder\Data\Scripts\Pathfinder\CollisionAvoidance.cs" >nul
+copy "Mods\Pathfinder\Data\Scripts\Pathfinder\PathfinderSettings.cs" "C:\Users\mikha\AppData\Roaming\SpaceEngineers\Mods\Pathfinder\Data\Scripts\Pathfinder\PathfinderSettings.cs" >nul
 copy "Mods\Pathfinder\Data\Scripts\Pathfinder\Utils.cs" "C:\Users\mikha\AppData\Roaming\SpaceEngineers\Mods\Pathfinder\Data\Scripts\Pathfinder\Utils.cs" >nul
 copy "Mods\Pathfinder\Data\Scripts\Pathfinder\OctreeAStar\Graph.cs" "C:\Users\mikha\AppData\Roaming\SpaceEngineers\Mods\Pathfinder\Data\Scripts\Pathfinder\OctreeAStar\Graph.cs" >nul
 copy "Mods\Pathfinder\Data\Scripts\Pathfinder\OctreeAStar\Octant.cs" "C:\Users\mikha\AppData\Roaming\SpaceEngineers\Mods\Pathfinder\Data\Scripts\Pathfinder\OctreeAStar\Octant.cs" >nul
 copy "Mods\Pathfinder\Data\Scripts\Pathfinder\OctreeAStar\Path.cs" "C:\Users\mikha\AppData\Roaming\SpaceEngineers\Mods\Pathfinder\Data\Scripts\Pathfinder\OctreeAStar\Path.cs" >nul
-copy "Mods\Pathfinder\Data\Scripts\Pathfinder\OctreeAStar\OctreeAStarSettings.cs" "C:\Users\mikha\AppData\Roaming\SpaceEngineers\Mods\Pathfinder\Data\Scripts\Pathfinder\OctreeAStar\OctreeAStarSettings.cs" >nul
-copy "Mods\Pathfinder\Data\Scripts\Pathfinder\OctreeAStar\DynamicPathRefinement.cs" "C:\Users\mikha\AppData\Roaming\SpaceEngineers\Mods\Pathfinder\Data\Scripts\Pathfinder\OctreeAStar\DynamicPathRefinement.cs" >nul
 
 REM Copy mod metadata and thumbnail
 copy "Mods\Pathfinder\Data\EntityComponents.sbc" "C:\Users\mikha\AppData\Roaming\SpaceEngineers\Mods\Pathfinder\Data\EntityComponents.sbc" >nul
@@ -27,12 +27,12 @@ if %errorlevel% equ 0 (
           echo Files copied:
           echo   - NavigationComponent.cs
           echo   - PathfinderSession.cs
+          echo   - CollisionAvoidance.cs
+          echo   - PathfinderSettings.cs
           echo   - Utils.cs
           echo   - OctreeAStar\Graph.cs
           echo   - OctreeAStar\Octant.cs
           echo   - OctreeAStar\Path.cs
-          echo   - OctreeAStar\OctreeAStarSettings.cs
-          echo   - OctreeAStar\DynamicPathRefinement.cs
           echo   - EntityComponents.sbc
           echo   - metadata.mod
           echo   - Thumb.jpg

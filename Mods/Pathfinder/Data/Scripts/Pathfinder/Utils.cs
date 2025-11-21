@@ -61,7 +61,7 @@ namespace Pathfinder
 
         public static void ShowHudMessage(string message, bool force = false)
         {
-            if (!force && !OctreeAStarSettings.AreMessagesEnabled)
+            if (!force && !PathfinderSettings.AreMessagesEnabled)
             {
                 return;
             }

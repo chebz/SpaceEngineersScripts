@@ -43,10 +43,20 @@ namespace IngameScript
         private const double RECOMPUTE_MASTER_PATH_DELAY_DEFAULT = 5.0;
 
         private bool _initialized;
+        private Program _program;
         private Navigation _navigation;
         private Alignment _alignment;
         private IMyRemoteControl _remoteControl;
         private ITerminalProperty<int> _currentWaypointIndexProperty;
+        private ITerminalProperty<string> _destinationNameProperty;
+        private ITerminalProperty<Vector3D?> _destinationProperty;
+        private ITerminalProperty<Vector3D> _offsetProperty;
+        private ITerminalProperty<MatrixD?> _targetMatrixProperty;
+        private ITerminalProperty<Vector3D?> _targetVelocityProperty;
+        private ITerminalProperty<bool> _pathfindingEnabledProperty;
+        private ITerminalProperty<bool> _collisionAvoidanceEnabledProperty;
+        private ITerminalProperty<bool> _isOnBaseApproachProperty;
+        private bool _trackDestination = false;
         private Action _onStart;
         private Action _onStop;
         private Action _onNoPath;
@@ -65,6 +75,7 @@ namespace IngameScript
         public bool Initialize(Program program, CustomDataConnector customDataConnector, Navigation navigation,
             Alignment alignment, out string errorMessage)
         {
+            _program = program;
             _navigation = navigation;
             _alignment = alignment;
             errorMessage = string.Empty;
@@ -77,13 +88,59 @@ namespace IngameScript
             }
 
             _currentWaypointIndexProperty = _remoteControl.GetProperty("CurrentWaypointIndex") as ITerminalProperty<int>;
-            if (_currentWaypointIndexProperty != null)
-            {
-                _currentWaypointIndexProperty.SetValue(_remoteControl, -1);
-            }
-            else
+            if (_currentWaypointIndexProperty == null)
             {
                 _remoteControl.Log("CurrentWaypointIndex property not found");
+            }
+            _currentWaypointIndexProperty?.SetValue(_remoteControl, -1);
+
+            _destinationNameProperty = _remoteControl.GetProperty("PathfinderDestinationName") as ITerminalProperty<string>;
+            if (_destinationNameProperty == null)
+            {
+                _remoteControl.Log("PathfinderDestinationName property not found");
+            }
+
+            _destinationProperty = _remoteControl.GetProperty("PathfinderDestination") as ITerminalProperty<Vector3D?>;
+            if (_destinationProperty == null)
+            {
+                _remoteControl.Log("PathfinderDestination property not found");
+            }
+
+            _offsetProperty = _remoteControl.GetProperty("PathfinderOffset") as ITerminalProperty<Vector3D>;
+            if (_offsetProperty == null)
+            {
+                _remoteControl.Log("PathfinderOffset property not found");
+            }
+
+            _targetMatrixProperty = _remoteControl.GetProperty("PathfinderTargetMatrix") as ITerminalProperty<MatrixD?>;
+            if (_targetMatrixProperty == null)
+            {
+                _remoteControl.Log("PathfinderTargetMatrix property not found");
+            }
+
+            _targetVelocityProperty = _remoteControl.GetProperty("PathfinderTargetVelocity") as ITerminalProperty<Vector3D?>;
+            if (_targetVelocityProperty == null)
+            {
+                _remoteControl.Log("PathfinderTargetVelocity property not found");
+            }
+
+            _pathfindingEnabledProperty = _remoteControl.GetProperty("PathfinderEnablePathfinding") as ITerminalProperty<bool>;
+            if (_pathfindingEnabledProperty == null)
+            {
+                _remoteControl.Log("PathfinderEnablePathfinding property not found");
+            }
+            _pathfindingEnabledProperty?.SetValue(_remoteControl, true);
+
+            _collisionAvoidanceEnabledProperty = _remoteControl.GetProperty("PathfinderEnableCollisionAvoidance") as ITerminalProperty<bool>;
+            if (_collisionAvoidanceEnabledProperty == null)
+            {
+                _remoteControl.Log("PathfinderEnableCollisionAvoidance property not found");
+            }
+
+            _isOnBaseApproachProperty = _remoteControl.GetProperty("PathfinderIsOnBaseApproach") as ITerminalProperty<bool>;
+            if (_isOnBaseApproachProperty == null)
+            {
+                _remoteControl.Log("PathfinderIsOnBaseApproach property not found");
             }
 
             var timers = program.GetLocalBlocks<IMyTimerBlock>();
@@ -170,19 +227,16 @@ namespace IngameScript
                 return;
             }
 
-            var destinationProperty =
-                _remoteControl.GetProperty("PathfinderDestination") as ITerminalProperty<Vector3D?>;
-            if (destinationProperty == null)
-            {
-                _remoteControl.Log("PathfinderDestination property not found");
-                return;
-            }
-
             _remoteControl.Log($"Setting destination to {destination}");
-            destinationProperty.SetValue(_remoteControl, destination);
+            _destinationProperty.SetValue(_remoteControl, destination);
         }
 
         public void SetDestination(string gpsName)
+        {
+            SetDestination(gpsName, Vector3D.Zero);
+        }
+
+        public void SetDestination(string gpsName, Vector3D offset)
         {
             if (!_initialized)
             {
@@ -200,11 +254,36 @@ namespace IngameScript
 
             _remoteControl.Log($"Setting destination name to {gpsName}");
             destinationNameProperty.SetValue(_remoteControl, gpsName);
+
+            var offsetProperty =
+                _remoteControl.GetProperty("PathfinderOffset") as ITerminalProperty<Vector3D>;
+            if (offsetProperty != null)
+            {
+                offsetProperty.SetValue(_remoteControl, offset);
+                _remoteControl.Log($"Set destination offset to {offset}");
+            }
         }
 
         private List<Vector3D> ParsePath(bool dpr)
         {
-            var propertyName = dpr ? "DPRPath" : "PathfinderPath";
+            if (dpr)
+            {
+                var caTargetProperty = _remoteControl.GetProperty("PathfinderCATarget") as ITerminalProperty<Vector3D?>;
+                if (caTargetProperty == null)
+                {
+                    return new List<Vector3D>();
+                }
+
+                var caTarget = caTargetProperty.GetValue(_remoteControl);
+                if (!caTarget.HasValue)
+                {
+                    return new List<Vector3D>();
+                }
+
+                return new List<Vector3D> { caTarget.Value };
+            }
+
+            var propertyName = "PathfinderPath";
             var pathProperty = _remoteControl.GetProperty(propertyName) as ITerminalProperty<string>;
             if (pathProperty == null)
             {
@@ -279,6 +358,7 @@ namespace IngameScript
 
         public void Start()
         {
+            // Don't reset _trackDestination here - it should be preserved when restarting in track mode
             _remoteControl.Log("Starting pathfinding navigation");
             if (!_initialized)
             {
@@ -286,8 +366,11 @@ namespace IngameScript
                 return;
             }
 
-            if (CurrentState is IdleState)
+            // When tracking is enabled (and pathfinding is off), always transition to waiting for path, even if already navigating
+            // This allows restarting navigation when we reach the end or encounter issues
+            if (CurrentState is IdleState || _trackDestination)
             {
+                RecomputePath();
                 TransitionTo(new WaitingForPathState(this));
                 _remoteControl.Log("Started pathfinding navigation");
             }
@@ -305,12 +388,25 @@ namespace IngameScript
 
         public void Start(string gpsName)
         {
-            SetDestination(gpsName);
+            Start(gpsName, Vector3D.Zero);
+        }
+
+        public void Start(string gpsName, Vector3D? offset)
+        {
+            SetDestination(gpsName, offset ?? Vector3D.Zero);
+            Start();
+        }
+
+        public void Start(string gpsName, Vector3D? offset, bool track)
+        {
+            _trackDestination = track;
+            SetDestination(gpsName, offset ?? Vector3D.Zero);
             Start();
         }
 
         public void Stop()
         {
+            _trackDestination = false;
             _remoteControl.Log("Stopping pathfinding navigation");
             if (!_initialized)
             {
@@ -355,6 +451,7 @@ namespace IngameScript
             public IdleState(PathfindingNavigation context, NavigationState navigationState = NavigationState.Idle) :
                 base(context)
             {
+                _context._program.Echo("IdleState");
                 _context._navigationState = navigationState;
                 _context._remoteControl.Log($"PathfindingNavigation: {navigationState}");
 
@@ -402,6 +499,14 @@ namespace IngameScript
                 if (pathStatus == null)
                 {
                     _context._remoteControl.Log("PathfinderStatus property not found");
+                    if (_context._trackDestination)
+                    {
+                        _context._program.Echo("WaitingForPathState: No path, restarting navigation");
+                        // When tracking is enabled (and pathfinding is off), restart navigation instead of going idle
+                        _context.Start();
+                        return;
+                    }
+                    _context._program.Echo("WaitingForPathState: No path, going idle");
                     _context.TransitionTo(new IdleState(_context));
                     return;
                 }
@@ -414,65 +519,35 @@ namespace IngameScript
                     {
                         _context.TransitionTo(new NavigatingState(_context, path));
                     }
-                    // else wait for DPR
+                    else if (_context._trackDestination)
+                    {
+                        _context._program.Echo("WaitingForPathState: Path found, restarting navigation");
+                        _context.Start();
+                    }
                 }
                 else if (pathStatusString == "NoPath")
                 {
-                    _context._remoteControl.Log("PathfindingNavigation: No path, scheduling recompute...");
-                    _context.TransitionTo(new WaitingForRecomputeState(_context));
+                    if (_context._trackDestination)
+                    {
+                        _context._program.Echo("WaitingForPathState: No path, restarting navigation");
+                        _context.Start();
+                    }
+                    else
+                    {
+                        _context._remoteControl.Log("PathfindingNavigation: No path, scheduling recompute...");
+                        _context._program.Echo("WaitingForPathState: No path, scheduling recompute");
+                        _context.TransitionTo(new IdleState(_context, NavigationState.NoPath));
+                    }
                 }
-            }
-        }
-
-        private class WaitingForRecomputeState : State<PathfindingNavigation>
-        {
-            private DateTime _readyAt;
-            private bool _recomputed;
-
-            public WaitingForRecomputeState(PathfindingNavigation context) : base(context)
-            {
-            }
-
-            public override void Enter()
-            {
-                var delaySeconds = Math.Max(0.0, _context._section.RecomputeMasterPathDelay.Value);
-                _recomputed = false;
-
-                if (delaySeconds > 0.0)
-                {
-                    _readyAt = DateTime.Now + TimeSpan.FromSeconds(delaySeconds);
-                    _context._remoteControl.Log($"PathfindingNavigation: waiting {delaySeconds:F1}s before recompute");
-                }
-                else
-                {
-                    _readyAt = DateTime.Now;
-                }
-            }
-
-            public override void Execute()
-            {
-                if (_recomputed)
-                {
-                    return;
-                }
-
-                if (DateTime.Now < _readyAt)
-                {
-                    return;
-                }
-
-                _context._remoteControl.Log("PathfindingNavigation: requesting path recompute");
-                _context.RecomputePath();
-                _recomputed = true;
-                _context.TransitionTo(new WaitingForPathState(_context));
+                //_context.UpdateTrackedDestination();
             }
         }
 
         private class NavigatingState : State<PathfindingNavigation>
         {
             private List<Vector3D> _masterPath;
-            private List<Vector3D> _dprPath;
-            private int _dprWaypointIndex = 1;
+            private Vector3D? _caTarget;
+            private Vector3D? _destination;
             private int _masterWaypointIndex = 1;
             private Vector3D _previousWaypoint;
 
@@ -484,67 +559,117 @@ namespace IngameScript
 
             public override void Enter()
             {
+                _context._program.Echo("NavigatingState");
                 _context._navigation.Stop();
                 _context._alignment.Stop();
-                _dprWaypointIndex = 1;
                 _masterWaypointIndex = 1;
                 _previousWaypoint = _context._remoteControl.GetPosition();
                 _context.SetCurrentWaypointIndex(_masterWaypointIndex);
+                _destination = _context._destinationProperty.GetValue(_context._remoteControl);
             }
 
             public override void Execute()
             {
-                // Check for DPR path updates
-                var dprPath = _context.ParsePath(true);
-                if (_dprPath == null || !dprPath.SequenceEqual(_dprPath))
+                if (_context.UpdateTrackedDestination(ref _destination))
                 {
-                    _dprPath = dprPath;
-                    _dprWaypointIndex = 1;
+                    _masterWaypointIndex = 1;
+                    _previousWaypoint = _context._remoteControl.GetPosition();
+                    _context.SetCurrentWaypointIndex(_masterWaypointIndex);
+                    _context._program.Echo("NavigatingState: Destination moved, resetting master waypoint index");
+                }
+
+                var caTargetProperty = _context._remoteControl.GetProperty("PathfinderCATarget") as ITerminalProperty<Vector3D?>;
+                Vector3D? newCaTarget = null;
+                if (caTargetProperty != null)
+                {
+                    newCaTarget = caTargetProperty.GetValue(_context._remoteControl);
+                }
+
+                if (_caTarget != newCaTarget)
+                {
+                    _caTarget = newCaTarget;
                     _previousWaypoint = _context._remoteControl.GetPosition();
                     _masterWaypointIndex = _context.GetCurrentWaypointIndexValue();
                 }
 
-
-                // If no valid path, wait
-                if (_dprPath.Count < 2)
+                bool pathfindingEnabled = _context._pathfindingEnabledProperty.GetValue(_context._remoteControl);
+                
+                if (!_caTarget.HasValue)
                 {
                     _context._navigation.Stop();
                     _context._alignment.Stop();
+                    _context._program.Echo("NavigatingState: No CA target, going idle");
                     return;
                 }
 
-                // Check if we've reached the end of the path
+
                 if (_masterWaypointIndex >= _masterPath.Count)
                 {
                     _context.SetCurrentWaypointIndex(-1);
-                    _context.Stop();
+                    if (_context._trackDestination)
+                    {
+                        _context._navigation.Stop();
+                        _context._alignment.Stop();
+                    }
+                    else
+                    {
+                        _context.Stop();
+                    }
+                    //_context._program.Echo($"masterWaypointIndex: {_masterWaypointIndex}, masterPath.Count: {_masterPath.Count}");
                     return;
                 }
 
-                // Navigate to current waypoint
-                var dprWaypoint = _dprPath[_dprWaypointIndex];
-                var masterWaypoint = _masterPath[_masterWaypointIndex];
+                var caWaypoint = _caTarget.Value;
                 var currentPosition = _context._remoteControl.GetPosition();
-                var distanceToMaster = Vector3D.Distance(currentPosition, masterWaypoint);
-                var distanceToDpr = Vector3D.Distance(currentPosition, dprWaypoint);
-                // Check if we've arrived at the current waypoint (within 1m)
-                if (distanceToMaster < 1.0)
+                var distanceToCa = Vector3D.Distance(currentPosition, caWaypoint);
+                
+                // Only check master waypoint distance if we haven't reached the end of the path
+                if (_masterWaypointIndex < _masterPath.Count)
                 {
-                    // Move to next waypoint
-                    _masterWaypointIndex++;
-                    _context.SetCurrentWaypointIndex(_masterWaypointIndex);
-                    _dprPath = null;
-                    return; // Skip navigation this tick
+                    _context._program.Echo($"Tracking destination: {_context._trackDestination}");
+                    if (_context._trackDestination)
+                    {
+                        _masterWaypointIndex = _masterPath.Count - 1;
+                    }
+                    else 
+                    {
+                        var masterWaypoint = _masterPath[_masterWaypointIndex];
+                        var distanceToMaster = Vector3D.Distance(currentPosition, masterWaypoint);
+                        
+                        if (distanceToMaster < 1.0)
+                        {
+                            _masterWaypointIndex++;
+                            _context.SetCurrentWaypointIndex(_masterWaypointIndex);
+                            _caTarget = null;
+                            _context._program.Echo("NavigatingState: Reached master waypoint, resetting CA target");
+                            return;
+                        }
+                    }
                 }
 
-                var target = _context.GetNavigationTarget(_previousWaypoint, dprWaypoint, currentPosition);
+                _context._program.Echo("NavigatingState: Getting navigation target");
+                var target = _context.GetNavigationTarget(_previousWaypoint, caWaypoint, currentPosition);
                 var alignmentMode = _context.GetAlignmentMode();
                 switch (alignmentMode)
                 {
                     case "target":
-                        if (distanceToDpr > _context._remoteControl.CubeGrid.GridSize * 2)
+                        if (distanceToCa > _context._remoteControl.CubeGrid.GridSize * 2)
                         {
-                            _context._alignment.AlignWithTarget(target);
+                            var targetMatrixProperty = _context._remoteControl.GetProperty("PathfinderTargetMatrix") as ITerminalProperty<MatrixD?>;
+                            MatrixD? targetMatrix = null;
+                            if (targetMatrixProperty != null)
+                            {
+                                targetMatrix = targetMatrixProperty.GetValue(_context._remoteControl);
+                            }
+                            
+                            if (targetMatrix.HasValue)
+                            {
+                                _context._alignment.AlignWithWorldMatrix(targetMatrix.Value);
+                            }
+                            else
+                            {
+                                _context._alignment.AlignWithTarget(target);
+                            }
                         }
                         else
                         {
@@ -552,16 +677,78 @@ namespace IngameScript
                         }
                         break;
                     case "gravity":
-                        _context.AlignWithGravityAndYaw(dprWaypoint);
+                        _context.AlignWithGravityAndYaw(caWaypoint);
                         break;
                     default:
                         _context.AlignWithGravityOnly();
                         break;
                 }
+
+                Vector3D targetVelocity = default(Vector3D);
+                if (_context._trackDestination && _context._isOnBaseApproachProperty.GetValue(_context._remoteControl))
+                {
+                    var velocity = _context._targetVelocityProperty.GetValue(_context._remoteControl);
+                    if (velocity.HasValue)
+                    {
+                        targetVelocity = velocity.Value;
+                    }
+                }
+
                 _context._navigation.NavigateTo(
                     target,
-                    _context._section.MaxSpeed.Value);
+                    _context._section.MaxSpeed.Value,
+                    0,
+                    targetVelocity);
             }
+        }
+
+        private bool UpdateTrackedDestination(ref Vector3D? destination)
+        {
+            if (!_trackDestination)
+            {
+                _program.Echo("UpdateTrackedDestination: Track destination is disabled");
+                return false;
+            }
+
+            var destinationName = _destinationNameProperty.GetValue(_remoteControl);
+            if (string.IsNullOrWhiteSpace(destinationName))
+            {
+                _program.Echo("UpdateTrackedDestination: Destination name is empty");
+                return false;
+            }
+
+            var targetMatrix = _targetMatrixProperty.GetValue(_remoteControl);
+            if (!targetMatrix.HasValue)
+            {
+                _program.Echo("UpdateTrackedDestination: Target matrix is not set");
+                return false;
+            }
+            var offset = _offsetProperty.GetValue(_remoteControl);
+            var newDestination = targetMatrix.Value.Translation;
+            if (offset != Vector3D.Zero)
+            {
+                var offsetInTargetSpace = Vector3D.TransformNormal(offset, targetMatrix.Value);
+                newDestination += offsetInTargetSpace;
+            }
+
+            double distTolerance;
+            if (_pathfindingEnabledProperty.GetValue(_remoteControl))
+            {
+                distTolerance = 50.0;
+            }
+            else
+            {
+                distTolerance = 0.1;
+            }
+
+            if (!destination.HasValue || Vector3D.Distance(newDestination, destination.Value) > distTolerance)
+            {
+                _program.Echo("UpdateTrackedDestination: Destination moved, recomputing path");
+                RecomputePath();
+                destination = newDestination;
+                return true;
+            }
+            return false;
         }
         #endregion
 

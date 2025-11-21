@@ -17,7 +17,7 @@ namespace Pathfinder.OctreeAStar
 
         public void Render(Color lineColor, bool showWaypoints)
         {
-            var thickness = OctreeAStarSettings.Instance.PathRenderThickness;
+            var thickness = PathfinderSettings.Instance.PathRenderThickness;
             for (var i = 0; i < points.Count - 1; i++)
             {
                 var start = points[i];

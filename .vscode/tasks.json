@@ -239,6 +239,29 @@
                 "panel": "shared"
             },
             "detail": "Copy Pathfinder mod to Space Engineers mods directory"
+        },
+        {
+            "label": "build-squad_nav",
+            "type": "shell",
+            "command": "dotnet",
+            "args": [
+                "build",
+                "Scripts/SquadNavigation/SquadNavigation.sln",
+                "--configuration",
+                "Debug"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "problemMatcher": "$msCompile",
+            "detail": "Build the SquadNavigation Space Engineers script"
         }
     ]
 }

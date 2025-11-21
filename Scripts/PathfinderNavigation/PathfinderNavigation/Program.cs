@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using Sandbox.ModAPI.Ingame;
+using Sandbox.ModAPI.Interfaces;
 using VRageMath;
 
 namespace IngameScript
@@ -89,15 +91,15 @@ namespace IngameScript
                     Vector3D? destination = null;
                     var gpsName = string.Empty;
                     var programmableBlockName = string.Empty;
+                    Vector3D? offset = null;
+                    bool track = false;
 
                     if (!string.IsNullOrEmpty(payload))
                     {
-                        var pipeIndex = payload.IndexOf('|');
-                        if (pipeIndex >= 0)
+                        var parts = payload.Split('|');
+                        if (parts.Length >= 1)
                         {
-                            var gpsFragment = payload.Substring(0, pipeIndex).TrimEnd();
-                            programmableBlockName = payload.Substring(pipeIndex + 1).Trim();
-
+                            var gpsFragment = parts[0].Trim();
                             Vector3D parsedDestination;
                             if (TryParseGps(gpsFragment, out parsedDestination))
                             {
@@ -108,17 +110,23 @@ namespace IngameScript
                                 gpsName = gpsFragment;
                             }
                         }
-                        else
+                        if (parts.Length >= 2)
                         {
-                            Vector3D parsedDestination;
-                            if (TryParseGps(payload, out parsedDestination))
+                            programmableBlockName = parts[1].Trim();
+                        }
+                        if (parts.Length >= 3)
+                        {
+                            var offsetString = parts[2].Trim();
+                            Vector3D parsedOffset;
+                            if (TryParseVector3D(offsetString, out parsedOffset))
                             {
-                                destination = parsedDestination;
+                                offset = parsedOffset;
                             }
-                            else
-                            {
-                                gpsName = payload;
-                            }
+                        }
+                        if (parts.Length >= 4)
+                        {
+                            var trackString = parts[3].Trim();
+                            bool.TryParse(trackString, out track);
                         }
                     }
 
@@ -129,9 +137,14 @@ namespace IngameScript
 
                     if (destination.HasValue)
                     {
-                        Echo($"Destination: {destination.Value}");
+                        var finalDestination = destination.Value;
+                        if (offset.HasValue)
+                        {
+                            finalDestination += offset.Value;
+                        }
+                        Echo($"Destination: {finalDestination}");
                         var currentPosition = Me.GetPosition();
-                        var distance = Vector3D.Distance(currentPosition, destination.Value);
+                        var distance = Vector3D.Distance(currentPosition, finalDestination);
                         var gridSize = Me?.CubeGrid != null ? Me.CubeGrid.WorldAABB.Size.Length() : 0;
 
                         if (gridSize > 0 && distance <= gridSize * 2)
@@ -142,13 +155,20 @@ namespace IngameScript
                         }
                         else
                         {
-                            _pathfindingNavigation.Start(destination.Value);
+                            _pathfindingNavigation.Start(finalDestination);
                             Echo("Starting pathfinding navigation...");
                         }
                     }
                     else if (!string.IsNullOrWhiteSpace(gpsName))
                     {
-                        _pathfindingNavigation.Start(gpsName);
+                        if (offset.HasValue)
+                        {
+                            _pathfindingNavigation.Start(gpsName, offset.Value, track);
+                        }
+                        else
+                        {
+                            _pathfindingNavigation.Start(gpsName, Vector3D.Zero, track);
+                        }
                         Echo($"Starting pathfinding navigation to GPS '{gpsName}'...");
                     }
                     else
@@ -200,6 +220,27 @@ namespace IngameScript
             _linkedProgrammableBlock.TryRun(command);
         }
 
+        private bool TryParseVector3D(string vectorString, out Vector3D vector)
+        {
+            vector = Vector3D.Zero;
+            var parts = vectorString.Split(',');
+            if (parts.Length != 3)
+            {
+                return false;
+            }
+
+            double x, y, z;
+            if (double.TryParse(parts[0].Trim(), out x) &&
+                double.TryParse(parts[1].Trim(), out y) &&
+                double.TryParse(parts[2].Trim(), out z))
+            {
+                vector = new Vector3D(x, y, z);
+                return true;
+            }
+
+            return false;
+        }
+
         private bool TryParseGps(string gpsString, out Vector3D destination)
         {
             destination = Vector3D.Zero;
@@ -207,35 +248,30 @@ namespace IngameScript
             var parts = gpsString.Split(':');
             if (parts.Length < 4)
             {
-                Echo($"Less than 4 parts in GPS string: {gpsString}");
                 return false;
             }
 
             var offset = parts[0].Equals("GPS", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
             if (parts.Length - offset < 4)
             {
-                Echo($"Less than 4 parts in GPS string: {gpsString}");
                 return false;
             }
 
             double x;
             if (!double.TryParse(parts[offset + 1], out x))
             {
-                Echo($"Failed to parse X coordinate: {parts[offset + 1]}");
                 return false;
             }
 
             double y;
             if (!double.TryParse(parts[offset + 2], out y))
             {
-                Echo($"Failed to parse Y coordinate: {parts[offset + 2]}");
                 return false;
             }
 
             double z;
             if (!double.TryParse(parts[offset + 3], out z))
             {
-                Echo($"Failed to parse Z coordinate: {parts[offset + 3]}");
                 return false;
             }
 

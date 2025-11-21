@@ -426,7 +426,7 @@ namespace Pathfinder.OctreeAStar
             var allOctants = new List<Octant>();
             GetAllOctants(ref allOctants);
 
-            bool showNonLeaf = OctreeAStarSettings.Instance.NonLeafSetting.ShouldShow;
+            bool showNonLeaf = PathfinderSettings.Instance.NonLeafSetting.ShouldShow;
 
             foreach (var octant in allOctants)
             {
@@ -437,7 +437,7 @@ namespace Pathfinder.OctreeAStar
 
                 if (octant.occupancy == OctantOccupancy.Full)
                 {
-                    var setting = OctreeAStarSettings.Instance.OccupiedSetting;
+                    var setting = PathfinderSettings.Instance.OccupiedSetting;
                     if (setting.ShouldShow)
                     {
                         Utils.DrawAabb(octant.bounds, setting.Color, setting.Wireframe, 1f, setting.LineThickness);
@@ -446,7 +446,7 @@ namespace Pathfinder.OctreeAStar
 
                 if (octant.state == OctantState.Open && !octant.isReverse)
                 {
-                    var setting = OctreeAStarSettings.Instance.OpenSetting;
+                    var setting = PathfinderSettings.Instance.OpenSetting;
                     if (setting.ShouldShow)
                     {
                         Utils.DrawAabb(octant.bounds, setting.Color, setting.Wireframe, 1f, setting.LineThickness);
@@ -455,7 +455,7 @@ namespace Pathfinder.OctreeAStar
 
                 if (octant.state == OctantState.Closed && !octant.isReverse)
                 {
-                    var setting = OctreeAStarSettings.Instance.ClosedSetting;
+                    var setting = PathfinderSettings.Instance.ClosedSetting;
                     if (setting.ShouldShow)
                     {
                         Utils.DrawAabb(octant.bounds, setting.Color, setting.Wireframe, 1f, setting.LineThickness);
@@ -464,7 +464,7 @@ namespace Pathfinder.OctreeAStar
 
                 if (octant.state == OctantState.Open && octant.isReverse)
                 {
-                    var setting = OctreeAStarSettings.Instance.OpenReverseSetting;
+                    var setting = PathfinderSettings.Instance.OpenReverseSetting;
                     if (setting.ShouldShow)
                     {
                         Utils.DrawAabb(octant.bounds, setting.Color, setting.Wireframe, 1f, setting.LineThickness);
@@ -473,7 +473,7 @@ namespace Pathfinder.OctreeAStar
 
                 if (octant.state == OctantState.Closed && octant.isReverse)
                 {
-                    var setting = OctreeAStarSettings.Instance.ClosedReverseSetting;
+                    var setting = PathfinderSettings.Instance.ClosedReverseSetting;
                     if (setting.ShouldShow)
                     {
                         Utils.DrawAabb(octant.bounds, setting.Color, setting.Wireframe, 1f, setting.LineThickness);
@@ -482,7 +482,7 @@ namespace Pathfinder.OctreeAStar
 
                 if (octant.state == OctantState.Unexplored)
                 {
-                    var setting = OctreeAStarSettings.Instance.UnexploredSetting;
+                    var setting = PathfinderSettings.Instance.UnexploredSetting;
                     if (setting.ShouldShow)
                     {
                         Utils.DrawAabb(octant.bounds, setting.Color, setting.Wireframe, 1f, setting.LineThickness);
@@ -491,7 +491,7 @@ namespace Pathfinder.OctreeAStar
 
                 if (octant.isMeet)
                 {
-                    var setting = OctreeAStarSettings.Instance.MeetSetting;
+                    var setting = PathfinderSettings.Instance.MeetSetting;
                     if (setting.ShouldShow)
                     {
                         Utils.DrawAabb(octant.bounds, setting.Color, setting.Wireframe, 1f, setting.LineThickness);

@@ -92,14 +92,14 @@
           <Compile Include="Data\Scripts\Pathfinder\FindPathAction.cs" />
           <Compile Include="Data\Scripts\Pathfinder\NavigationComponent.cs" />
           <Compile Include="Data\Scripts\Pathfinder\PathfinderSession.cs" />
+          <Compile Include="Data\Scripts\Pathfinder\CollisionAvoidance.cs" />
           <Compile Include="Data\Scripts\Pathfinder\Utils.cs" />
           <Compile Include="Data\Scripts\Pathfinder\OctreeAStar\Octant.cs" />
           <Compile Include="Data\Scripts\Pathfinder\OctreeAStar\Graph.cs" />
           <Compile Include="Data\Scripts\Pathfinder\OctreeAStar\Path.cs" />
           <Compile Include="Data\Scripts\Pathfinder\OctreeAStar\DynamicObstacle.cs" />
-          <Compile Include="Data\Scripts\Pathfinder\OctreeAStar\OctreeAStarSettings.cs" />
+          <Compile Include="Data\Scripts\Pathfinder\PathfinderSettings.cs" />
           <Compile Include="Data\Scripts\Pathfinder\OctreeAStar\OctreeAStar.cs" />
-          <Compile Include="Data\Scripts\Pathfinder\OctreeAStar\DynamicPathRefinement.cs" />
         </ItemGroup>
   <ItemGroup>
     <None Include=".vs\ProjectSettings.json" />
