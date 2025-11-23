@@ -47,6 +47,7 @@ namespace IngameScript
         private Action _onDocked;
         private Action _onUndocked;
         private List<IMyBatteryBlock> _batteryBlocks = new List<IMyBatteryBlock>();
+        private List<IMyGasTank> _hydrogenTanks = new List<IMyGasTank>();
         #endregion
 
         #region Methods
@@ -78,6 +79,8 @@ namespace IngameScript
                 errorMessage = "No battery blocks found";
                 return false;
             }
+
+            _hydrogenTanks = program.GetLocalBlocks<IMyGasTank>();
 
             _connector = connectors[0];
 
@@ -254,10 +257,6 @@ namespace IngameScript
                 _targetStationName = normalizedStationName;
                 TransitionTo(new UndockingState(this, normalizedStationName));
             }
-            else
-            {
-                _program.Echo("Cannot dock - operation in progress");
-            }
         }
 
         public void Stop()
@@ -324,6 +323,19 @@ namespace IngameScript
                 battery.ChargeMode = recharge ? ChargeMode.Recharge : ChargeMode.Auto;
             }
         }
+
+        private void SetHydrogenTankFillMode(bool fill)
+        {
+            foreach (var tank in _hydrogenTanks)
+            {
+                if (tank == null)
+                {
+                    continue;
+                }
+
+                tank.Stockpile = fill;
+            }
+        }
         #endregion
 
         #region Types
@@ -346,7 +358,6 @@ namespace IngameScript
 
                 if (!string.IsNullOrEmpty(_nextStationName) && _nextStationName != "*")
                 {
-                    _context._program.Echo($"Transitioning to dock to station {_nextStationName}");
                     _context._targetStationName = _nextStationName;
                     _context.TransitionTo(new RequestingApproachState(_context, _nextStationName));
                 }
@@ -368,6 +379,7 @@ namespace IngameScript
                 _context._alignment.Stop();
                 _context._navigation.PowerOff();
                 _context.SetBatteryRechargeMode(true);
+                _context.SetHydrogenTankFillMode(true);
                 _context.InvokeDocked();
             }
 
@@ -654,6 +666,7 @@ namespace IngameScript
                     return;
                 }
                 _context.SetBatteryRechargeMode(false);
+                _context.SetHydrogenTankFillMode(false);
                 var connectorForward = _context._connector.WorldMatrix.Forward;
                 var currentPos = _context._connector.GetPosition();
                 _undockPosition = currentPos - (connectorForward * UNDOCK_DISTANCE);

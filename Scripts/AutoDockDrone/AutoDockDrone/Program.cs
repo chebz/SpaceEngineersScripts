@@ -127,7 +127,6 @@ namespace IngameScript
             switch (command)
             {
                 case "dock":
-                    Echo($"Handling dock command: {command} with args: {commandArgs}");
                     var stationName = "*";
                     var connectorName = "*";
                     var callbackName = string.Empty;
@@ -154,7 +153,6 @@ namespace IngameScript
 
                     if (!string.IsNullOrEmpty(callbackName))
                     {
-                        Echo($"Linking callback programmable block: {callbackName}");
                         LinkCallbackProgrammableBlock(callbackName);
                     }
 
@@ -227,13 +225,11 @@ namespace IngameScript
         {
             if (_callbackProgrammableBlock == null)
             {
-                Echo("No callback programmable block found");
                 return;
             }
 
             if (!_callbackProgrammableBlock.IsFunctional)
             {
-                Echo("Callback programmable block is not functional");
                 return;
             }
 
@@ -246,7 +242,6 @@ namespace IngameScript
             var programmableBlock = FindProgrammableBlock(programmableBlockName);
             if (programmableBlock == null)
             {
-                Echo($"Programmable block '{programmableBlockName}' not found");
                 return;
             }
 

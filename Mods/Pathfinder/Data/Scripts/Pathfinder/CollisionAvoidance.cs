@@ -192,6 +192,7 @@ namespace Pathfinder
 
         public void RefinePath(NavigationComponent navigation)
         {
+            _isOnBaseApproach = false;
             if (navigation == null)
             {
                 return;
@@ -269,6 +270,22 @@ namespace Pathfinder
             _voxelOBBs.Clear();
             _subOctantOBBs.Clear();
 
+            var intentDistance = PathfinderSettings.Instance.IntentDistance;
+            if (distanceToTarget < intentDistance && waypointIndex + 1 < points.Count)
+            {
+                var nextWaypoint = points[waypointIndex + 1];
+                Vector3D nextCollisionPos;
+                bool dummyTerrainCollision;
+                bool isNextPathClear = IsPathClear(_startPosition, nextWaypoint, navigation, out nextCollisionPos, out dummyTerrainCollision);
+                
+                if (isNextPathClear)
+                {
+                    navigation.SetCurrentWaypointIndex(waypointIndex + 1);
+                    _targetWaypoint = nextWaypoint;
+                    distanceToTarget = Vector3D.Distance(_startPosition, _targetWaypoint);
+                }
+            }
+
             var caDistance = PathfinderSettings.Instance.caDistance;
             
             Vector3D caTargetPoint;
@@ -283,145 +300,44 @@ namespace Pathfinder
             }
             
             Vector3D collisionPos;
-            bool isInitialPathClear = IsPathClear(_startPosition, caTargetPoint, navigation, out collisionPos);
+            bool isTerrainCollision;
+            bool isInitialPathClear = IsPathClear(_startPosition, caTargetPoint, navigation, out collisionPos, out isTerrainCollision);
             _pathChecks.Add(new PathCheck(_startPosition, caTargetPoint, isInitialPathClear));
             
             if (isInitialPathClear)
             {
                 _state = CollisionAvoidanceState.Ready;
                 _isOnBaseApproach = true;
-                if (distanceToTarget <= caDistance)
-                {
-                    SetCATarget(navigation, _targetWaypoint);
-                }
-                else
-                {
-                    SetCATarget(navigation, caTargetPoint);
-                }
+                SetCATarget(navigation, _targetWaypoint);
                 return;
             }
             
             // Path is not clear, so we're not on base approach
             _isOnBaseApproach = false;
 
+            if (isTerrainCollision && collisionPos.LengthSquared() > 1e-6)
+            {
+                var planet = MyGamePruningStructure.GetClosestPlanet(_startPosition);
+                if (planet != null)
+                {
+                    var dirToPlanet = (planet.WorldMatrix.Translation - collisionPos).Normalized();
+                    var caTarget = collisionPos - dirToPlanet * PathfinderSettings.Instance.CAMinAltitude;
+                    _state = CollisionAvoidanceState.Ready;
+                    SetCATarget(navigation, caTarget);
+                    return;
+                }
+            }
+
             // Store the first collision as closest collision point
             _closestCollisionPoint = collisionPos;
             _closestCollisionDistanceToTarget = Vector3D.Distance(_closestCollisionPoint, _targetWaypoint);
             
-            // Check if first voxel is colliding (collision is at or very close to start)
             var agentSize = navigation.AgentSize;
-            var collisionDistFromStart = Vector3D.Distance(_closestCollisionPoint, _startPosition);
-            if (collisionDistFromStart < agentSize)
+            
+            var foundClearPath = TryFindClearPathToWaypoint(navigation, _targetWaypoint, _closestCollisionPoint, agentSize);
+            if (foundClearPath)
             {
-                // First voxel is colliding - try subdividing into 8 octants to find a clear path
-                _isOnBaseApproach = false; // First voxel collision, not on base approach
-                
-                // Find the voxel map that's colliding
-                MyVoxelBase collidingVoxelMap = null;
-                var direction = caTargetPoint - _startPosition;
-                var directionNormalized = direction.Length() > 1e-6 ? direction / direction.Length() : Vector3D.Zero;
-                var obbHalfExtents = new Vector3D(agentSize * 0.5, agentSize * 0.5, agentSize * 0.5);
-                var up = Vector3D.CalculatePerpendicularVector(directionNormalized);
-                var quatRotation = Quaternion.CreateFromForwardUp(directionNormalized, up);
-                var firstObbCenter = _startPosition + directionNormalized * (agentSize * 0.5);
-                var firstObbMatrix = MatrixD.CreateFromQuaternion(quatRotation);
-                firstObbMatrix.Translation = firstObbCenter;
-                
-                // Find which voxel map is colliding
-                _staticQueryResults.Clear();
-                var firstObb = new MyOrientedBoundingBoxD(new BoundingBoxD(-obbHalfExtents, obbHalfExtents), firstObbMatrix);
-                MyGamePruningStructure.GetAllEntitiesInOBB(ref firstObb, _staticQueryResults, MyEntityQueryType.Both);
-                foreach (var entity in _staticQueryResults)
-                {
-                    var voxelMap = entity as MyVoxelBase;
-                    if (voxelMap != null)
-                    {
-                        if (CheckVoxelOBB(voxelMap, firstObbCenter, obbHalfExtents, firstObbMatrix, _targetWaypoint))
-                        {
-                            collidingVoxelMap = voxelMap;
-                            break;
-                        }
-                    }
-                }
-                
-                if (collidingVoxelMap != null)
-                {
-                    // Subdivide first OBB into 8 octants
-                    var subHalfExtents = obbHalfExtents * 0.5;
-                    var offsets = new[]
-                    {
-                        new Vector3D(-subHalfExtents.X, -subHalfExtents.Y, -subHalfExtents.Z),
-                        new Vector3D(subHalfExtents.X, -subHalfExtents.Y, -subHalfExtents.Z),
-                        new Vector3D(-subHalfExtents.X, subHalfExtents.Y, -subHalfExtents.Z),
-                        new Vector3D(subHalfExtents.X, subHalfExtents.Y, -subHalfExtents.Z),
-                        new Vector3D(-subHalfExtents.X, -subHalfExtents.Y, subHalfExtents.Z),
-                        new Vector3D(subHalfExtents.X, -subHalfExtents.Y, subHalfExtents.Z),
-                        new Vector3D(-subHalfExtents.X, subHalfExtents.Y, subHalfExtents.Z),
-                        new Vector3D(subHalfExtents.X, subHalfExtents.Y, subHalfExtents.Z)
-                    };
-                    
-                    var subOctants = new List<SubOctant>();
-                    _subOctantOBBs.Clear();
-                    for (int i = 0; i < offsets.Length; i++)
-                    {
-                        var subCenter = firstObbCenter + Vector3D.TransformNormal(offsets[i], firstObbMatrix);
-                        var subMatrix = MatrixD.CreateFromQuaternion(quatRotation);
-                        subMatrix.Translation = subCenter;
-                        
-                        // Check if this sub-octant is clear
-                        var isOccupied = CheckVoxelOBB(collidingVoxelMap, subCenter, subHalfExtents, subMatrix, _targetWaypoint);
-                        var isClear = !isOccupied;
-                        
-                        // Store for rendering
-                        var subObb = new MyOrientedBoundingBoxD(new BoundingBoxD(-subHalfExtents, subHalfExtents), subMatrix);
-                        _subOctantOBBs.Add(new SubOctantOBB(subObb, isClear));
-                        
-                        if (isClear)
-                        {
-                            var distToTarget = Vector3D.Distance(subCenter, _targetWaypoint);
-                            subOctants.Add(new SubOctant(subCenter, distToTarget));
-                        }
-                    }
-                    
-                    // Sort by distance to target (closest first)
-                    subOctants.Sort((a, b) => a.DistToTarget.CompareTo(b.DistToTarget));
-                    
-                    if (subOctants.Count > 0)
-                    {
-                        // Found a clear sub-octant, navigate agentSize distance in its direction
-                        var clearOctantCenter = subOctants[0].Center;
-                        var dirToClearOctant = clearOctantCenter - _startPosition;
-                        var dirToClearOctantLength = dirToClearOctant.Length();
-                        if (dirToClearOctantLength > 1e-6)
-                        {
-                            var dirToClearOctantNormalized = dirToClearOctant / dirToClearOctantLength;
-                            var targetPoint = _startPosition + dirToClearOctantNormalized * agentSize;
-                            _state = CollisionAvoidanceState.Ready;
-                            SetCATarget(navigation, targetPoint);
-                            return;
-                        }
-                    }
-                }
-                
-                // No clear sub-octant found, back up like before
-                var toTarget = _targetWaypoint - _startPosition;
-                var toTargetLength = toTarget.Length();
-                if (toTargetLength > 1e-6)
-                {
-                    var dirToTarget = toTarget / toTargetLength;
-                    var backFromTarget = _startPosition - dirToTarget * agentSize;
-                    _state = CollisionAvoidanceState.Ready;
-                    SetCATarget(navigation, backFromTarget);
-                    return;
-                }
-                else
-                {
-                    // Target is at start position, just move back in a default direction
-                    var backFromTarget = _startPosition - Vector3D.UnitX * agentSize;
-                    _state = CollisionAvoidanceState.Ready;
-                    SetCATarget(navigation, backFromTarget);
-                    return;
-                }
+                return;
             }
             
             // Set up coordinate system based on collision point
@@ -491,6 +407,95 @@ namespace Pathfinder
             return true;
         }
         
+        private bool TryFindClearPathToWaypoint(NavigationComponent navigation, Vector3D targetWaypoint, Vector3D collisionPoint, double agentSize)
+        {
+            var sphereRadius = Vector3D.Distance(_startPosition, targetWaypoint);
+            if (sphereRadius < 1e-6)
+            {
+                return false;
+            }
+            
+            var direction = targetWaypoint - _startPosition;
+            var directionNormalized = direction / sphereRadius;
+            
+            var right = Vector3D.CalculatePerpendicularVector(directionNormalized);
+            var rightLength = right.Length();
+            if (rightLength < 1e-6)
+            {
+                if (Math.Abs(Vector3D.Dot(Vector3D.UnitX, directionNormalized)) < 0.9)
+                {
+                    right = Vector3D.UnitX;
+                }
+                else if (Math.Abs(Vector3D.Dot(Vector3D.UnitY, directionNormalized)) < 0.9)
+                {
+                    right = Vector3D.UnitY;
+                }
+                else
+                {
+                    right = Vector3D.UnitZ;
+                }
+                right = right - directionNormalized * Vector3D.Dot(right, directionNormalized);
+                rightLength = right.Length();
+                if (rightLength > 1e-6)
+                {
+                    right = right / rightLength;
+                }
+                else
+                {
+                    return false;
+                }
+            }
+            else
+            {
+                right = right / rightLength;
+            }
+            
+            var up = Vector3D.Cross(directionNormalized, right);
+            var upLength = up.Length();
+            if (upLength < 1e-6)
+            {
+                return false;
+            }
+            up = up / upLength;
+            
+            var angleIncrementDegrees = PathfinderSettings.Instance.CAAngleIncrement;
+            var angleIncrementRadians = MathHelper.ToRadians(angleIncrementDegrees);
+            var maxPitchRadians = Math.PI - 1e-6;
+            
+            for (double pitchRadians = angleIncrementRadians; pitchRadians <= maxPitchRadians; pitchRadians += angleIncrementRadians)
+            {
+                var cosPitch = Math.Cos(pitchRadians);
+                var sinPitch = Math.Sin(pitchRadians);
+                
+                var azimuthSteps = (int)Math.Ceiling(2.0 * Math.PI / angleIncrementRadians);
+                var azimuthStepSize = 2.0 * Math.PI / azimuthSteps;
+                
+                for (int azimuthStep = 0; azimuthStep < azimuthSteps; azimuthStep++)
+                {
+                    var azimuthRadians = azimuthStep * azimuthStepSize;
+                    var cosAzimuth = Math.Cos(azimuthRadians);
+                    var sinAzimuth = Math.Sin(azimuthRadians);
+                    
+                    var perpendicularComponent = right * (sinPitch * cosAzimuth) + up * (sinPitch * sinAzimuth);
+                    var spherePoint = _startPosition + directionNormalized * (cosPitch * sphereRadius) + perpendicularComponent * sphereRadius;
+                    
+                    Vector3D testCollisionPos;
+                    bool dummyTerrainCollision;
+                    bool isTestPathClear = IsPathClear(_startPosition, spherePoint, navigation, out testCollisionPos, out dummyTerrainCollision);
+                    
+                    if (isTestPathClear)
+                    {
+                        _state = CollisionAvoidanceState.Ready;
+                        _isOnBaseApproach = false;
+                        SetCATarget(navigation, spherePoint);
+                        return true;
+                    }
+                }
+            }
+            
+            return false;
+        }
+        
         private void PerformDetourCalculation(NavigationComponent navigation, double totalDistanceToTarget, double agentSize)
         {
             // Perform entire calculation in one go
@@ -514,7 +519,8 @@ namespace Pathfinder
                         var testPoint = _startPosition + dirToTargetNormalized * totalDistanceToTarget;
                         
                         Vector3D testCollisionPos;
-                        bool isTestPathClear = IsPathClear(_startPosition, testPoint, navigation, out testCollisionPos);
+                        bool dummyTerrainCollision;
+                        bool isTestPathClear = IsPathClear(_startPosition, testPoint, navigation, out testCollisionPos, out dummyTerrainCollision);
                         _pathChecks.Add(new PathCheck(_startPosition, testPoint, isTestPathClear));
                         
                         if (isTestPathClear)
@@ -665,8 +671,9 @@ namespace Pathfinder
             return closestPointOnPath;
         }
         
-        private bool IsPathClear(Vector3D start, Vector3D end, NavigationComponent navigation, out Vector3D collisionPosition)
+        private bool IsPathClear(Vector3D start, Vector3D end, NavigationComponent navigation, out Vector3D collisionPosition, out bool isTerrainCollision)
         {
+            isTerrainCollision = false;
             collisionPosition = Vector3D.Zero;
             var remoteGrid = navigation.RemoteControl?.CubeGrid;
             var agentSize = navigation.AgentSize;
@@ -675,24 +682,27 @@ namespace Pathfinder
             var length = direction.Length();
             var directionNormalized = length > 1e-6 ? direction / length : Vector3D.Zero;
 
-            if (length > PathfinderSettings.Instance.caScanDistanceStep && navigation.RemoteControl.GetNaturalGravity().LengthSquared() > 1e-6)
+            if (length > PathfinderSettings.Instance.IntentDistance && navigation.RemoteControl.GetNaturalGravity().LengthSquared() > 1e-6)
             {
                 var planet = MyGamePruningStructure.GetClosestPlanet(start);
                 if (planet != null)
                 {
                     var downRayLength = PathfinderSettings.Instance.CAMinAltitude;
                     var step = PathfinderSettings.Instance.caScanDistanceStep;
-                    var stepCount = length > 1e-6 ? Math.Max(1, (int)Math.Ceiling(length / step)) : 1;
-                    stepCount -= 1;
-                    for (int i = 0; i <= stepCount; i++)
+                    var adjustedLength = length - PathfinderSettings.Instance.IntentDistance;
+                    var stepCount = adjustedLength > 1e-6 ? Math.Max(1, (int)Math.Ceiling(adjustedLength / step)) : 1;
+                    // skip start point
+                    for (int i = 1; i <= stepCount; i++)
                     {
-                        var distanceAlong = Math.Min(length, i * step);
+                        var distanceAlong = Math.Min(adjustedLength, i * step);
                         var pointOnPath = start + directionNormalized * distanceAlong;
                         var dirToPlanet = (planet.WorldMatrix.Translation - pointOnPath).Normalized();
                         var samplePoint = pointOnPath + dirToPlanet * downRayLength;
                         if (planet.IsUnderGround(samplePoint))
                         {
                             collisionPosition = pointOnPath;
+                            isTerrainCollision = true;
+                            // Utils.ShowHudMessage("Under ground");
                             return false;
                         }
                     }
@@ -700,15 +710,18 @@ namespace Pathfinder
             }
             length = Math.Min(length, PathfinderSettings.Instance.IntentDistance);
             var halfExtents = new Vector3D(agentSize * 0.5, agentSize * 0.5, agentSize * 0.5);
-            var correctedEnd = start + directionNormalized * length;
+            var offsetDistance = agentSize * 0.5;
+            var offsetLength = Math.Max(0.0, length - offsetDistance);
+            var offsetStart = start + directionNormalized * offsetDistance;
+            var offsetEnd = offsetStart + directionNormalized * offsetLength;
             
-            if (length < 1e-6)
+            if (offsetLength < 1e-6)
             {
-                _pathObb = new MyOrientedBoundingBoxD(start, halfExtents, Quaternion.Identity);
+                _pathObb = new MyOrientedBoundingBoxD(offsetStart, halfExtents, Quaternion.Identity);
             }
             else
             {
-                var delta = correctedEnd - start;
+                var delta = offsetEnd - offsetStart;
                 var velocity = navigation.RemoteControl.GetShipVelocities().LinearVelocity;
                 var velocityLength = velocity.Length();
                 
@@ -726,7 +739,7 @@ namespace Pathfinder
                 var velocityExtent = velocityLength * PathfinderSettings.Instance.velFactor;
                 halfExtents.Z = (pathLength + velocityExtent) * 0.5;
                 
-                var pathCenter = start + delta * 0.5;
+                var pathCenter = offsetStart + delta * 0.5;
                 var velocityOffset = forward * velocityExtent * 0.5;
                 var obbCenter = pathCenter + velocityOffset;
                 
@@ -747,6 +760,7 @@ namespace Pathfinder
                 {
                     _blockedIntentEntityIds.Add(kvp.Key);
                     collisionPosition = GetCollisionPoint(_pathObb, intentObstacle, start, end);
+                    // Utils.ShowHudMessage("Intent obstacle");
                     return false;
                 }
             }
@@ -758,56 +772,62 @@ namespace Pathfinder
                 {
                     _blockedVOIndices.Add(i);
                     collisionPosition = GetCollisionPoint(_pathObb, velocityObstacle, start, end);
+                    // Utils.ShowHudMessage("Velocity obstacle");
                     return false;
                 }
             }
 
             _staticQueryResults.Clear();
-            MyGamePruningStructure.GetAllEntitiesInOBB(ref _pathObb, _staticQueryResults, MyEntityQueryType.Both);
-            var pathBounds = new BoundingBoxD(-_pathObb.HalfExtent, _pathObb.HalfExtent);
-            var obbMatrix = MatrixD.CreateFromQuaternion(_pathObb.Orientation);
-            obbMatrix.Translation = _pathObb.Center;
-
-            for (int i = 0; i < _staticQueryResults.Count; i++)
+            if (length > agentSize * 2.0)
             {
-                var entity = _staticQueryResults[i];
+                MyGamePruningStructure.GetAllEntitiesInOBB(ref _pathObb, _staticQueryResults, MyEntityQueryType.Both);
+                var pathBounds = new BoundingBoxD(-_pathObb.HalfExtent, _pathObb.HalfExtent);
+                var obbMatrix = MatrixD.CreateFromQuaternion(_pathObb.Orientation);
+                obbMatrix.Translation = _pathObb.Center;
 
-                var voxelMap = entity as MyVoxelBase;
-                if (voxelMap != null)
+                for (int i = 0; i < _staticQueryResults.Count; i++)
                 {
-                    Vector3D voxelCollisionPos;
-                    if (FindVoxelCollisionPosition(voxelMap, start, end, directionNormalized, agentSize, obbMatrix, out voxelCollisionPos))
+                    var entity = _staticQueryResults[i];
+
+                    var voxelMap = entity as MyVoxelBase;
+                    if (voxelMap != null)
                     {
-                        collisionPosition = voxelCollisionPos;
-                        _staticQueryResults.Clear();
-                        return false;
+                        Vector3D voxelCollisionPos;
+                        if (FindVoxelCollisionPosition(voxelMap, start, end, directionNormalized, agentSize, obbMatrix, out voxelCollisionPos))
+                        {
+                            collisionPosition = voxelCollisionPos;
+                            _staticQueryResults.Clear();
+                            // Utils.ShowHudMessage("Voxel collision");
+                            return false;
+                        }
+                        continue;
                     }
-                    continue;
-                }
 
-                var grid = entity as IMyCubeGrid;
-                if (grid == null)
-                {
-                    continue;
-                }
-
-                if (remoteGrid != null && grid.EntityId == remoteGrid.EntityId)
-                {
-                    continue;
-                }
-
-                var slimBlocks = new List<IMySlimBlock>();
-                grid.GetBlocks(slimBlocks);
-
-                foreach (var slimBlock in slimBlocks)
-                {
-                    var blockOBB = Utils.GetBlockOBB(slimBlock);
-                    var contains = blockOBB.Contains(ref _pathObb);
-                    if (contains != ContainmentType.Disjoint)
+                    var grid = entity as IMyCubeGrid;
+                    if (grid == null)
                     {
-                        collisionPosition = blockOBB.Center;
-                        _staticQueryResults.Clear();
-                        return false;
+                        continue;
+                    }
+
+                    if (remoteGrid != null && grid.EntityId == remoteGrid.EntityId)
+                    {
+                        continue;
+                    }
+
+                    var slimBlocks = new List<IMySlimBlock>();
+                    grid.GetBlocks(slimBlocks);
+
+                    foreach (var slimBlock in slimBlocks)
+                    {
+                        var blockOBB = Utils.GetBlockOBB(slimBlock);
+                        var contains = blockOBB.Contains(ref _pathObb);
+                        if (contains != ContainmentType.Disjoint)
+                        {
+                            collisionPosition = blockOBB.Center;
+                            _staticQueryResults.Clear();
+                            // Utils.ShowHudMessage("Block collision");
+                            return false;
+                        }
                     }
                 }
             }
@@ -836,7 +856,7 @@ namespace Pathfinder
             
             var forward = obbMatrix.Forward;
             var pathObbLength = pathObbHalfExtents.Z * 2.0;
-            var numSubOBBs = (int)Math.Ceiling(pathObbLength / agentSize);
+            var numSubOBBs = (int)Math.Floor(pathObbLength / agentSize);
             
             if (numSubOBBs <= 0)
             {
@@ -897,15 +917,15 @@ namespace Pathfinder
             var settings = PathfinderSettings.Instance;
 
             // Render all path checks
-            // if (settings.RenderPath)
-            // {
-            //     var thickness = settings.PathRenderThickness;
-            //     foreach (var pathCheck in _pathChecks)
-            //     {
-            //         var color = pathCheck.IsClear ? Color.Green : Color.Orange;
-            //         Utils.DrawLine(pathCheck.Start, pathCheck.End, color, thickness);
-            //     }
-            // }
+            if (settings.RenderPath)
+            {
+                var thickness = settings.PathRenderThickness;
+                foreach (var pathCheck in _pathChecks)
+                {
+                    var color = pathCheck.IsClear ? Color.Green : Color.Orange;
+                    Utils.DrawLine(pathCheck.Start, pathCheck.End, color, thickness);
+                }
+            }
 
             // Render CATarget line if path rendering is enabled
             if (settings.RenderPath)

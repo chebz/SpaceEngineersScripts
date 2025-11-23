@@ -1121,7 +1121,8 @@ namespace IngameScript
             private class RaisingState : SpiralMinerState
             {
                 private bool _navigated;
-
+                private bool _raised;
+                
                 public RaisingState(SpiralMinerController context) : base(context) { }
 
                 public override void Enter()
@@ -1136,11 +1137,12 @@ namespace IngameScript
                 {
                     if (!_navigated)
                     {
-                        if (_context._navigation.NavigateTo(_context._section.MiningSiteGPS.Value, _context._section.RepositioningMovementSpeed.Value))
+                        var raiseDestination = _context._section.MiningSiteGPS.Value + _context.GetUpDirection() * _context._section.RaiseAltitude.Value;
+                        if (_context._navigation.NavigateTo(raiseDestination, _context._section.RepositioningMovementSpeed.Value))
                         {
                             _navigated = true;
                         }
-                        var distance = Vector3D.Distance(_context._remoteControl.GetPosition(), _context._section.MiningSiteGPS.Value);
+                        var distance = Vector3D.Distance(_context._remoteControl.GetPosition(), raiseDestination);
                         _context.UpdateStatus("Raising", $"Remaining: {distance:F1} m");
                         return;
                     }
@@ -1273,6 +1275,7 @@ namespace IngameScript
                 private const string DOCKING_CONNECTOR_NAME_DEFAULT = "*";
                 private const double BATTERY_UNDOCK_THRESHOLD_DEFAULT = 0.95;
                 private const double BATTERY_RETURN_THRESHOLD_DEFAULT = 0.30;
+                private const double RAISE_ALTITUDE_DEFAULT = 30.0;
 
                 public GPSProperty BaseGPS { get; } = new GPSProperty("BaseGPS", Vector3D.Zero, "Base");
                 public GPSProperty MiningSiteGPS { get; } = new GPSProperty("MiningSiteGPS", Vector3D.Zero, "MiningSite");
@@ -1292,10 +1295,12 @@ namespace IngameScript
                 public StringProperty DockingConnectorName { get; } = new StringProperty("DockingConnectorName", DOCKING_CONNECTOR_NAME_DEFAULT);
                 public DoubleProperty BatteryUndockThreshold { get; } = new DoubleProperty("BatteryUndockThreshold", BATTERY_UNDOCK_THRESHOLD_DEFAULT);
                 public DoubleProperty BatteryReturnThreshold { get; } = new DoubleProperty("BatteryReturnThreshold", BATTERY_RETURN_THRESHOLD_DEFAULT);
+                public DoubleProperty RaiseAltitude { get; } = new DoubleProperty("RaiseAltitude", RAISE_ALTITUDE_DEFAULT, showInCustomData: true);
                 public BoolProperty StartOnLoad { get; } = new BoolProperty("StartOnLoad", false);
                 public DoubleProperty OrbitRadiusState { get; } = new DoubleProperty("OrbitRadiusState", 0.0, showInCustomData: true);
                 public BoolProperty ContractingState { get; } = new BoolProperty("ContractingState", false, showInCustomData: true);
                 public DoubleProperty MiningDepthState { get; } = new DoubleProperty("MiningDepthState", 0.0, showInCustomData: true);
+                
 
                 public SpiralMinerSection() : base("SpiralMiner")
                 {

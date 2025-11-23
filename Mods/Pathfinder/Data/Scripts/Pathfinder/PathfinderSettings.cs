@@ -79,6 +79,7 @@ namespace Pathfinder
         public double IntentDistance = 50.0;
         public double caDistance = 50.0;
         public double velFactor = 0.1;
+        public double CAAngleIncrement = 45.0;
     }
 
     public class PathfinderSettings
@@ -116,6 +117,7 @@ namespace Pathfinder
         private const double DEFAULT_INTENT_DISTANCE = 50.0;
         private const double DEFAULT_CA_DISTANCE = 50.0;
         private const double DEFAULT_VEL_FACTOR = 0.1;
+        private const double DEFAULT_CA_ANGLE_INCREMENT = 45.0;
         private static DebugRenderSetting CloneSetting(DebugRenderSetting setting)
         {
             return new DebugRenderSetting(setting.Name, setting.ShouldShow, setting.Color, setting.Wireframe, setting.LineThickness);
@@ -151,6 +153,7 @@ namespace Pathfinder
         public double IntentDistance = DEFAULT_INTENT_DISTANCE;
         public double caDistance = DEFAULT_CA_DISTANCE;
         public double velFactor = DEFAULT_VEL_FACTOR;
+        public double CAAngleIncrement = DEFAULT_CA_ANGLE_INCREMENT;
         private PathfinderSettings()
         {
             InitializeDefaults();
@@ -201,6 +204,7 @@ namespace Pathfinder
             IntentDistance = DEFAULT_INTENT_DISTANCE;
             caDistance = DEFAULT_CA_DISTANCE;
             velFactor = DEFAULT_VEL_FACTOR;
+            CAAngleIncrement = DEFAULT_CA_ANGLE_INCREMENT;
         }
 
         public void ResetToDefaults()
@@ -347,6 +351,9 @@ namespace Pathfinder
 
                 // velFactor
                 velFactor = MathHelper.Clamp(settingsData.velFactor, 0.0, 10.0);
+
+                // CAAngleIncrement
+                CAAngleIncrement = MathHelper.Clamp(settingsData.CAAngleIncrement, 1.0, 180.0);
             }
             catch (Exception ex)
             {
@@ -390,6 +397,7 @@ namespace Pathfinder
                     IntentDistance = IntentDistance,
                     caDistance = caDistance,
                     velFactor = velFactor,
+                    CAAngleIncrement = CAAngleIncrement,
                 };
 
                 string xmlContent = MyAPIGateway.Utilities.SerializeToXML(settingsData);
